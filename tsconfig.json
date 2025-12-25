@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "moduleResolution": "Node", // Windows 下必须开启 Node 模块解析
+    "strict": true,
+    "jsx": "preserve",
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true, // 跳过第三方库类型检查（避免 Windows 下类型兼容问题）
+    "types": ["element-plus/global"], // 显式引入 Element Plus 类型
+    "typeRoots": ["node_modules/@types"],
+    "baseUrl": ".", // Windows 下路径解析基准
+    "paths": {
+      "@/*": ["src/*"] // 适配 Windows 下的 @ 别名
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
