@@ -306,7 +306,7 @@ export const sseChat = async (
       },
       signal: signal
     });
-
+    console.log("SSEres:",response);
     // 检查请求是否成功
     if (!response.ok) {
       const errorText = await response.text();
@@ -321,6 +321,7 @@ export const sseChat = async (
 
     // 获取流读取器
     const reader = response.body?.getReader();
+    
     if (!reader) {
       throw new Error("无法获取响应流读取器");
     }
@@ -328,7 +329,6 @@ export const sseChat = async (
     // 文本解码器，用于解析二进制流
     const textDecoder = new TextDecoder('utf-8');
     let buffer = '';
-
     const readStream = async () => {
       try {
         while (true) {
@@ -391,6 +391,7 @@ export const sseChat = async (
         }
       }
     };
+    console.log("开始读取流数据");
 
     // 开始读取流
     readStream().catch(error => {

@@ -218,8 +218,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onUnmounted, watch,reactive} from 'vue'
-import { ElMessage, ElMessageBox, ElInput } from 'element-plus'
+import { ref, computed, onMounted, nextTick, onUnmounted, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Plus, ChatLineRound, Close, Promotion, DocumentCopy, 
   Refresh, Star, Share, Search, Sunny, Moon, Edit,
@@ -273,7 +273,7 @@ const userStore = useUserStore()
 
 // 会话相关
 const chatList = ref<Chat[]>([])
-const messagesMap = reactive<Record<number | string, Message[]>>({})
+const messagesMap = ref<Record<string | number, Message[]>>({})
 const activeChatId = ref<number | string>('')
 const inputMessage = ref('')
 const isSending = ref(false)
@@ -305,16 +305,13 @@ const md = new MarkdownIt({
 })
 
 const currentMessages = computed(() => {
-  // 1. 先判断 activeChatId 是否有效（非空）
-  const chatId = activeChatId.value;
+  const chatId = activeChatId.value
   if (!chatId) {
-    return []; // 无有效对话ID时，返回空数组
+    return []
   }
   
-  // 2. reactive 对象直接访问，无需 .value
-  // 3. 安全判断：messagesMap 中是否存在该 chatId 对应的消息列表
-  return messagesMap[chatId] || [];
-});
+  return messagesMap.value[chatId] || []
+})
 
 const currentChatTitle = computed(() => {
   const chat = chatList.value.find(chat => chat.id === activeChatId.value)
@@ -459,11 +456,14 @@ const loadMoreSessions = async () => {
 // 加载会话历史消息
 const loadSessionMessages = async (chatId: number | string, sessionId?: string) => {
   if (!sessionId || !userStore.token) {
-    messagesMap[chatId] = []
+    messagesMap.value = {
+      ...messagesMap.value,
+      [chatId]: []
+    }
     return
   }
   
-  if (messagesMap[chatId] && messagesMap[chatId].length > 0) {
+  if (messagesMap.value[chatId] && messagesMap.value[chatId].length > 0) {
     return // 已经加载过了
   }
   
@@ -471,9 +471,9 @@ const loadSessionMessages = async (chatId: number | string, sessionId?: string) 
   loadingChats.value[chatId] = true
   
   try {
-    // 假设 getSessionMessages 返回 { messages: SessionMessage[] }
     const response = await getSessionMessages(sessionId)
-    console.log("response:",response);
+    console.log("response:", response)
+    
     if (response.messages && response.messages.length > 0) {
       const messages: Message[] = response.messages.map((msg: SessionMessage, index: number) => ({
         id: msg.id || `${sessionId}_${index}`,
@@ -482,20 +482,30 @@ const loadSessionMessages = async (chatId: number | string, sessionId?: string) 
         timestamp: new Date(msg.timestamp).getTime() || Date.now() - (response.messages.length - index) * 60000
       }))
       
-      messagesMap[chatId] = messages
+      // 更新 messagesMap
+      messagesMap.value = {
+        ...messagesMap.value,
+        [chatId]: messages
+      }
       
       nextTick(() => {
         scrollToBottom()
         setupCopyButtons()
       })
     } else {
-      messagesMap[chatId] = []
+      messagesMap.value = {
+        ...messagesMap.value,
+        [chatId]: []
+      }
     }
   } catch (error: any) {
     console.error('加载消息失败:', error)
-    messagesMap[chatId] = []
+    messagesMap.value = {
+      ...messagesMap.value,
+      [chatId]: []
+    }
     
-    if (error.response?.status !== 404) { // 404表示没有消息，不显示错误
+    if (error.response?.status !== 404) {
       ElMessage.error(`加载消息失败: ${error.message || '未知错误'}`)
     }
   } finally {
@@ -514,7 +524,7 @@ const selectChat = async (chatId: number | string) => {
   activeChatId.value = chatId
   
   const chat = chatList.value.find(c => c.id === chatId)
-  if (chat && chat.sessionId && (!messagesMap[chatId] || messagesMap[chatId].length === 0)) {
+  if (chat && chat.sessionId && (!messagesMap.value[chatId] || messagesMap.value[chatId].length === 0)) {
     await loadSessionMessages(chatId, chat.sessionId)
   } else {
     nextTick(() => {
@@ -523,8 +533,10 @@ const selectChat = async (chatId: number | string) => {
     })
   }
 }
+
 const startNewChat = async () => {
-  console.log("开始发送消息");
+  console.log("开始创建新对话")
+  
   if (!userStore.token) {
     ElMessage.warning('请先登录')
     userStore.goToLogin()
@@ -540,13 +552,13 @@ const startNewChat = async () => {
     currentCancelStream.value = null
     
     const response = await createNewSession()
-  console.log('API响应状态:', response)
-    // 添加响应验证
+    console.log('API响应状态:', response)
+    
     if (!response || !response.sessionId) {
       throw new Error('API响应无效或缺少sessionId')
     }
     
-    console.log('创建会话响应:', response) // 调试日志
+    console.log('创建会话响应:', response)
     
     const newChat: Chat = {
       id: response.sessionId,
@@ -557,7 +569,13 @@ const startNewChat = async () => {
     
     // 添加到列表顶部
     chatList.value.unshift(newChat)
-    messagesMap[response.sessionId] = []
+    
+    // 初始化空消息数组
+    messagesMap.value = {
+      ...messagesMap.value,
+      [response.sessionId]: []
+    }
+    
     activeChatId.value = response.sessionId
     
     nextTick(() => {
@@ -566,7 +584,6 @@ const startNewChat = async () => {
     })
   } catch (error: any) {
     console.error('创建会话失败:', error)
-    // 创建失败时，使用本地临时ID
     const newChatId = `temp_${Date.now()}`
     const newChat: Chat = {
       id: newChatId,
@@ -575,7 +592,10 @@ const startNewChat = async () => {
     }
     
     chatList.value.unshift(newChat)
-    messagesMap[newChatId] = []
+    messagesMap.value = {
+      ...messagesMap.value,
+      [newChatId]: []
+    }
     activeChatId.value = newChatId
     
     ElMessage.warning('创建会话失败，使用临时会话')
@@ -603,9 +623,13 @@ const deleteChat = async (chatId: number | string) => {
     const index = chatList.value.findIndex(chat => chat.id === chatId)
     
     if (index !== -1) {
-      // 先删除本地数据
+      // 删除本地数据
       chatList.value.splice(index, 1)
-      delete messagesMap[chatId]
+      
+      // 删除 messagesMap 中的数据
+      const newMessagesMap = { ...messagesMap.value }
+      delete newMessagesMap[chatId]
+      messagesMap.value = newMessagesMap
       
       // 如果删除的是当前激活的对话，切换到第一个对话
       if (activeChatId.value === chatId) {
@@ -618,7 +642,7 @@ const deleteChat = async (chatId: number | string) => {
         }
       }
       
-      // 如果对话有sessionId（来自后端的真实对话），调用API删除
+      // 如果对话有sessionId，调用API删除
       if (chatToDelete?.sessionId) {
         try {
           await deleteSession(chatToDelete.sessionId)
@@ -677,19 +701,18 @@ const sendQuickMessage = (message: string) => {
 
 // 发送消息
 const sendMessage = async () => {
-  console.log("开始发送消息");
+  console.log("开始发送消息，当前activeChatId:", activeChatId.value)
+  
   const messageContent = inputMessage.value.trim()
   if (!messageContent || isSending.value) return
   
   if (!activeChatId.value) {
     await startNewChat()
-    // 等待新对话创建完成
     await nextTick()
   }
   
   if (!activeChatId.value) return
   
-  // 检查是否登录
   if (!userStore.token) {
     ElMessage.warning('请先登录')
     userStore.goToLogin()
@@ -708,11 +731,22 @@ const sendMessage = async () => {
     timestamp: Date.now()
   }
   
-  if (!messagesMap[activeChatId.value]) {
-    messagesMap[activeChatId.value] = []
+  const chatId = activeChatId.value
+  
+  // 确保 chatId 在 messagesMap 中存在
+  if (!messagesMap.value[chatId]) {
+    messagesMap.value = {
+      ...messagesMap.value,
+      [chatId]: []
+    }
   }
   
-  messagesMap[activeChatId.value].push(userMessage)
+  // 添加用户消息
+  messagesMap.value = {
+    ...messagesMap.value,
+    [chatId]: [...messagesMap.value[chatId], userMessage]
+  }
+  
   inputMessage.value = ''
   
   const aiMessageId = `ai_${Date.now()}`
@@ -723,42 +757,70 @@ const sendMessage = async () => {
     timestamp: Date.now()
   }
   
-  messagesMap[activeChatId.value].push(aiMessage)
+  // 添加AI消息（初始为空）
+  messagesMap.value = {
+    ...messagesMap.value,
+    [chatId]: [...messagesMap.value[chatId], aiMessage]
+  }
+  
   scrollToBottom()
   
   try {
     const cancelStream = await sseChat(
-      String(activeChatId.value),
+      String(chatId),
       messageContent,
       (chunk) => {
-        const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
-          msg => msg.id === aiMessageId
-        )
+        console.log("收到流数据chunk:", chunk)
+        
+        // 获取当前消息列表
+        const currentMessages = messagesMap.value[chatId] || []
+        const aiMessageIndex = currentMessages.findIndex(msg => msg.id === aiMessageId)
+        
         if (aiMessageIndex !== -1) {
-          messagesMap[activeChatId.value][aiMessageIndex].content += chunk
+          // 创建新的消息列表
+          const updatedMessages = [...currentMessages]
+          updatedMessages[aiMessageIndex] = {
+            ...updatedMessages[aiMessageIndex],
+            content: updatedMessages[aiMessageIndex].content + chunk
+          }
+          
+          // 更新 messagesMap
+          messagesMap.value = {
+            ...messagesMap.value,
+            [chatId]: updatedMessages
+          }
+          
           scrollToBottom()
         }
       },
       (error) => {
+        console.error('SSE连接错误:', error)
         ElMessage.error('AI服务连接错误：' + error.message)
         isSending.value = false
         
-        const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
+        // 移除空的AI消息
+        const currentMessages = messagesMap.value[chatId] || []
+        const aiMessageIndex = currentMessages.findIndex(
           msg => msg.id === aiMessageId && msg.content === ''
         )
         if (aiMessageIndex !== -1) {
-          messagesMap[activeChatId.value].splice(aiMessageIndex, 1)
+          const updatedMessages = currentMessages.filter((_, index) => index !== aiMessageIndex)
+          messagesMap.value = {
+            ...messagesMap.value,
+            [chatId]: updatedMessages
+          }
         }
       },
       () => {
+        console.log("SSE连接完成")
         isSending.value = false
         currentCancelStream.value = null
         
         // 更新对话标题（如果是新对话的第一条消息）
-        const currentChat = chatList.value.find(chat => chat.id === activeChatId.value)
+        const currentChat = chatList.value.find(chat => chat.id === chatId)
         if (currentChat && currentChat.title === '新对话') {
           const newTitle = messageContent.slice(0, 20) + (messageContent.length > 20 ? '...' : '')
-          updateChatTitle(activeChatId.value, newTitle)
+          updateChatTitle(chatId, newTitle)
         }
         
         nextTick(() => setupCopyButtons())
@@ -767,14 +829,21 @@ const sendMessage = async () => {
     
     currentCancelStream.value = cancelStream
   } catch (error: any) {
+    console.error('发送消息失败：', error)
     ElMessage.error('发送消息失败：' + (error.message || '未知错误'))
     isSending.value = false
     
-    const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
+    // 移除空的AI消息
+    const currentMessages = messagesMap.value[chatId] || []
+    const aiMessageIndex = currentMessages.findIndex(
       msg => msg.id === aiMessageId && msg.content === ''
     )
     if (aiMessageIndex !== -1) {
-      messagesMap[activeChatId.value].splice(aiMessageIndex, 1)
+      const updatedMessages = currentMessages.filter((_, index) => index !== aiMessageIndex)
+      messagesMap.value = {
+        ...messagesMap.value,
+        [chatId]: updatedMessages
+      }
     }
   }
 }
@@ -876,7 +945,7 @@ watch(() => userStore.token, (newToken) => {
   } else {
     // 用户退出登录，清空数据
     chatList.value = []
-    messagesMap = {}
+    messagesMap.value = {}
     activeChatId.value = ''
   }
 })
@@ -890,7 +959,6 @@ onUnmounted(() => {
   })
 })
 </script>
-
 <style scoped lang="scss">
 .ai-chat-container {
   height: 100vh;
