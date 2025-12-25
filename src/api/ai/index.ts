@@ -295,6 +295,8 @@ export const sseChat = async (
   const { signal } = abortController;
 
   try {
+    console.log("开始SSE请求，URL:", `/api/chat/sse?${params.toString()}`);
+    
     // 发起Fetch请求，接收流式响应
     const response = await fetch(`/api/chat/sse?${params.toString()}`, {
       method: 'GET',
@@ -306,17 +308,24 @@ export const sseChat = async (
       },
       signal: signal
     });
-    console.log("SSEres:",response);
+    
+    console.log("SSE响应状态:", response.status, response.ok);
+    console.log("SSE响应头:", Object.fromEntries(response.headers.entries()));
+    
     // 检查请求是否成功
     if (!response.ok) {
       const errorText = await response.text();
+      console.error("SSE错误响应:", errorText);
       throw new Error(`SSE连接失败 (${response.status}): ${errorText || response.statusText}`);
     }
 
     // 检查响应类型
     const contentType = response.headers.get('content-type');
+    console.log("响应Content-Type:", contentType);
+    
     if (!contentType || !contentType.includes('text/event-stream')) {
-      throw new Error('服务器响应不是SSE流');
+      console.warn("警告：响应不是SSE流，Content-Type:", contentType);
+      // 不抛出错误，尝试继续处理
     }
 
     // 获取流读取器
@@ -329,72 +338,109 @@ export const sseChat = async (
     // 文本解码器，用于解析二进制流
     const textDecoder = new TextDecoder('utf-8');
     let buffer = '';
+    
     const readStream = async () => {
       try {
+        let chunkCount = 0;
+        
         while (true) {
           const { done, value } = await reader.read();
           
           if (done) {
-            // 流读取完成
+            console.log("流读取完成，总共收到", chunkCount, "个chunk");
             onComplete();
             break;
           }
 
+          chunkCount++;
+          
           // 解码数据并追加到缓冲区
-          buffer += textDecoder.decode(value, { stream: true });
+          const chunkText = textDecoder.decode(value, { stream: true });
+          console.log(`chunk ${chunkCount} 原始数据:`, JSON.stringify(chunkText));
+          console.log(`chunk ${chunkCount} 长度:`, chunkText.length);
+          
+          buffer += chunkText;
           
           // 处理完整的SSE事件
           const lines = buffer.split('\n');
           buffer = lines.pop() || ''; // 保留不完整的行
 
-          for (const line of lines) {
-            if (line.trim() === '') continue;
+          console.log(`chunk ${chunkCount} 分割为 ${lines.length} 行，buffer剩余: ${buffer.length}`);
+          
+       for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          console.log(`行 ${i}: ${JSON.stringify(line)}`);
+          
+          if (line.trim() === '') {
+            console.log(`行 ${i}: 空行，跳过`);
+            continue;
+          }
 
-            if (line.startsWith('data:')) {
-              const dataContent = line.slice(5).trim();
-              if (dataContent) {
-                try {
-                  // 尝试解析JSON
-                  const event: SSEEvent = JSON.parse(dataContent);
-                  
-                  if (event.type === 'message' && event.data) {
-                    onMessage(event.data);
-                  } else if (event.type === 'complete') {
-                    onComplete();
-                    return;
-                  } else if (event.type === 'error') {
-                    throw new Error(event.message || 'SSE流错误');
-                  }
-                } catch (parseError) {
-                  // 如果不是JSON，直接作为消息内容
-                  onMessage(dataContent);
-                }
-              }
-            } else if (line.startsWith('event:')) {
-              const eventType = line.slice(6).trim();
-              if (eventType === 'complete') {
+          if (line.startsWith('data:')) {
+            const dataContent = line.slice(5).trim();
+            console.log(`行 ${i}: 找到data，内容: ${JSON.stringify(dataContent)}`);
+            
+            if (dataContent) {
+              // 检查是否是特殊标记
+              if (dataContent === '[DONE]' || dataContent === 'DONE' || dataContent === 'done') {
+                console.log(`行 ${i}: 收到完成标记`);
                 onComplete();
                 return;
-              } else if (eventType === 'error') {
-                throw new Error('SSE流错误事件');
               }
-            } else if (line.startsWith('retry:')) {
-              // 可以处理重试间隔，这里暂时忽略
-              continue;
+              
+              try {
+                // 尝试解析JSON
+                const event = JSON.parse(dataContent);
+                console.log(`行 ${i}: 解析为JSON:`, event);
+                
+                if (event.type === 'message' && event.data) {
+                  onMessage(event.data);
+                } else if (event.type === 'complete') {
+                  onComplete();
+                  return;
+                } else if (event.type === 'error') {
+                  throw new Error(event.message || 'SSE流错误');
+                } else if (event.data) {
+                  // 如果有data字段，即使type不是message也发送
+                  onMessage(event.data);
+                }
+              } catch (parseError) {
+                // 如果不是JSON，直接作为消息内容
+                console.log(`行 ${i}: 不是JSON，直接作为消息:`, dataContent);
+                
+                // 过滤掉消息ID - 添加这行
+                const cleanedData = dataContent.replace(/^id:[a-f0-9\-]+/, '').trim();
+                if (cleanedData) {
+                  onMessage(cleanedData);
+                }
+              }
+            }
+          } else if (line.startsWith('event:')) {
+            // ... 其他代码不变
+          } else {
+            console.log(`行 ${i}: 未知格式，直接作为消息:`, line);
+            
+            // 过滤掉消息ID - 添加这行
+            const cleanedLine = line.replace(/^id:[a-f0-9\-]+/, '').trim();
+            if (cleanedLine) {
+              onMessage(cleanedLine);
             }
           }
         }
+        }
       } catch (streamError) {
+        console.error("读取流过程中出错:", streamError);
         if ((streamError as Error).name !== 'AbortError') {
           onError(streamError as Error);
           onComplete();
         }
       }
     };
-    console.log("开始读取流数据");
 
+    console.log("开始读取流数据");
     // 开始读取流
     readStream().catch(error => {
+      console.error("readStream promise 拒绝:", error);
       if ((error as Error).name !== 'AbortError') {
         onError(error as Error);
         onComplete();
@@ -402,6 +448,7 @@ export const sseChat = async (
     });
 
   } catch (error) {
+    console.error("SSE请求捕获错误:", error);
     // 排除主动取消的错误
     if ((error as Error).name !== 'AbortError') {
       onError(error as Error);
@@ -411,6 +458,7 @@ export const sseChat = async (
 
   // 返回取消流式请求的函数
   return () => {
+    console.log("取消SSE请求");
     abortController.abort();
   };
 };

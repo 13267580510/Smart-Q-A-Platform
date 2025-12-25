@@ -16,7 +16,7 @@
         <!-- 品牌Logo和新建对话按钮 -->
         <div class="sidebar-header">
           <div class="brand-logo">
-            <span class="logo-text">deepseek</span>
+            <span class="logo-text">小智AI助手</span>
           </div>
           <el-button class="new-chat-btn" @click="startNewChat" :loading="isCreatingChat">
             <el-icon><Plus /></el-icon>
@@ -184,7 +184,7 @@
         <div class="input-area">
           <el-input
             v-model="inputMessage"
-            placeholder="给 DeepSeek 发送消息"
+            placeholder="给 小智 发送消息"
             :rows="2"
             type="textarea"
             resize="none"
@@ -700,18 +700,23 @@ const sendQuickMessage = (message: string) => {
 }
 
 // 发送消息
+// 发送消息
 const sendMessage = async () => {
-  console.log("开始发送消息，当前activeChatId:", activeChatId.value)
+  console.log("1. 开始发送消息，当前activeChatId:", activeChatId.value)
   
   const messageContent = inputMessage.value.trim()
   if (!messageContent || isSending.value) return
   
   if (!activeChatId.value) {
+    console.log("2. 没有activeChatId，创建新对话")
     await startNewChat()
     await nextTick()
   }
   
-  if (!activeChatId.value) return
+  if (!activeChatId.value) {
+    console.log("3. 创建新对话失败，没有activeChatId")
+    return
+  }
   
   if (!userStore.token) {
     ElMessage.warning('请先登录')
@@ -719,6 +724,7 @@ const sendMessage = async () => {
     return
   }
   
+  console.log("4. 准备发送消息，内容:", messageContent)
   currentCancelStream.value?.()
   currentCancelStream.value = null
   
@@ -763,26 +769,38 @@ const sendMessage = async () => {
     [chatId]: [...messagesMap.value[chatId], aiMessage]
   }
   
+  console.log("5. 用户消息已添加，等待AI响应")
   scrollToBottom()
   
   try {
+    console.log("6. 开始调用 sseChat API")
+    
     const cancelStream = await sseChat(
       String(chatId),
       messageContent,
       (chunk) => {
-        console.log("收到流数据chunk:", chunk)
+        console.log("7. 收到流数据chunk:", chunk)
+        console.log("   chunk长度:", chunk.length)
+        console.log("   chunk类型:", typeof chunk)
         
         // 获取当前消息列表
         const currentMessages = messagesMap.value[chatId] || []
         const aiMessageIndex = currentMessages.findIndex(msg => msg.id === aiMessageId)
         
+        console.log("   AI消息索引:", aiMessageIndex)
+        console.log("  当前消息数:", currentMessages.length)
+        
         if (aiMessageIndex !== -1) {
           // 创建新的消息列表
           const updatedMessages = [...currentMessages]
+          const oldContent = updatedMessages[aiMessageIndex].content
           updatedMessages[aiMessageIndex] = {
             ...updatedMessages[aiMessageIndex],
-            content: updatedMessages[aiMessageIndex].content + chunk
+            content: oldContent + chunk
           }
+          
+          console.log("   更新前内容长度:", oldContent.length)
+          console.log("   更新后内容长度:", updatedMessages[aiMessageIndex].content.length)
           
           // 更新 messagesMap
           messagesMap.value = {
@@ -790,11 +808,16 @@ const sendMessage = async () => {
             [chatId]: updatedMessages
           }
           
+          console.log("8. messagesMap 已更新")
           scrollToBottom()
+        } else {
+          console.error("  错误：未找到AI消息，ID:", aiMessageId)
         }
       },
       (error) => {
-        console.error('SSE连接错误:', error)
+        console.error("9. SSE连接错误:", error)
+        console.error("   错误详情:", error.message)
+        console.error("   错误堆栈:", error.stack)
         ElMessage.error('AI服务连接错误：' + error.message)
         isSending.value = false
         
@@ -812,7 +835,7 @@ const sendMessage = async () => {
         }
       },
       () => {
-        console.log("SSE连接完成")
+        console.log("10. SSE连接完成")
         isSending.value = false
         currentCancelStream.value = null
         
@@ -827,9 +850,16 @@ const sendMessage = async () => {
       }
     )
     
+    console.log("11. sseChat 调用成功，返回取消函数")
     currentCancelStream.value = cancelStream
+    
   } catch (error: any) {
-    console.error('发送消息失败：', error)
+    console.error("12. 发送消息失败：", error)
+    console.error("   错误类型:", typeof error)
+    console.error("   错误消息:", error.message)
+    console.error("   错误响应:", error.response)
+    console.error("   错误状态:", error.status)
+    
     ElMessage.error('发送消息失败：' + (error.message || '未知错误'))
     isSending.value = false
     
@@ -847,7 +877,6 @@ const sendMessage = async () => {
     }
   }
 }
-
 // 滚动到消息底部
 const scrollToBottom = () => {
   nextTick(() => {
