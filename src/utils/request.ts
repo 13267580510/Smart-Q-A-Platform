@@ -59,7 +59,7 @@ request.interceptors.request.use((config) => {
 request.interceptors.response.use(
   (response: AxiosResponse<ApiResponse>): any => {
     const apiResponse = response.data;
-    
+      console.log("有回包：",apiResponse);
     // 使用类型守卫检查响应是否成功
     if (isSuccessResponse(apiResponse)) {
       return apiResponse.data;

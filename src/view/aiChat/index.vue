@@ -18,7 +18,7 @@
           <div class="brand-logo">
             <span class="logo-text">deepseek</span>
           </div>
-          <el-button class="new-chat-btn" @click="startNewChat">
+          <el-button class="new-chat-btn" @click="startNewChat" :loading="isCreatingChat">
             <el-icon><Plus /></el-icon>
             开启新对话
           </el-button>
@@ -29,18 +29,37 @@
           <div 
             v-for="chat in chatList" 
             :key="chat.id"
-            :class="['chat-item', { active: activeChatId === chat.id }]"
+            :class="['chat-item', { active: activeChatId === chat.id, 'loading': loadingChats[chat.id] }]"
             @click="selectChat(chat.id)"
+            @mouseenter="isHoveredChat = chat.id"
+            @mouseleave="isHoveredChat = null"
           >
             <el-icon><ChatLineRound /></el-icon>
             <span class="chat-title">{{ chat.title }}</span>
-            <el-icon 
-              class="delete-btn" 
-              @click.stop="deleteChat(chat.id)"
-              v-show="activeChatId === chat.id || isHoveredChat === chat.id"
-            >
-              <Close />
-            </el-icon>
+            <div class="chat-actions">
+              <el-icon 
+                class="delete-btn" 
+                @click.stop="deleteChat(chat.id)"
+                v-show="activeChatId === chat.id || isHoveredChat === chat.id"
+              >
+                <Close />
+              </el-icon>
+              <el-icon class="loading-icon" v-if="loadingChats[chat.id]">
+                <Loading />
+              </el-icon>
+            </div>
+          </div>
+          
+          <!-- 加载更多提示 -->
+          <div class="load-more" v-if="hasMoreSessions && !isLoadingSessions">
+            <el-button link @click="loadMoreSessions">加载更多...</el-button>
+          </div>
+          <div class="loading-sessions" v-if="isLoadingSessions">
+            <el-icon class="loading-icon"><Loading /></el-icon>
+            <span>加载中...</span>
+          </div>
+          <div class="empty-sessions" v-if="chatList.length === 0 && !isLoadingSessions">
+            <el-empty description="暂无对话记录" />
           </div>
         </div>
       </div>
@@ -49,16 +68,48 @@
       <div class="chat-main">
         <!-- 标题栏 -->
         <div class="conversation-header">
-          <h3 class="conversation-title">
-            {{ currentChatTitle }}
-          </h3>
-          <el-button class="share-btn" circle>
+          <div class="title-section">
+            <h3 class="conversation-title">
+              {{ currentChatTitle }}
+            </h3>
+            <el-button class="edit-title-btn" size="small" circle @click="editChatTitle">
+              <el-icon><Edit /></el-icon>
+            </el-button>
+          </div>
+          <el-button class="share-btn" circle @click="shareConversation">
             <el-icon><Share /></el-icon>
           </el-button>
         </div>
 
         <!-- 消息容器 -->
         <div class="message-container" ref="messageContainer">
+          <!-- 消息加载提示 -->
+          <div class="loading-messages" v-if="loadingMessages">
+            <el-icon class="loading-icon"><Loading /></el-icon>
+            <span>正在加载消息...</span>
+          </div>
+          
+          <!-- 无消息提示 -->
+          <div class="empty-messages" v-if="!loadingMessages && currentMessages.length === 0">
+            <div class="empty-content">
+              <el-icon class="empty-icon"><ChatLineSquare /></el-icon>
+              <h4>开始新的对话</h4>
+              <p>输入消息开始与AI对话，或者从左侧选择历史对话</p>
+              <div class="quick-starts">
+                <el-button @click="sendQuickMessage('帮我写一个Vue组件的示例')" text>
+                  ✨ 帮我写一个Vue组件的示例
+                </el-button>
+                <el-button @click="sendQuickMessage('解释一下什么是闭包')" text>
+                  🤔 解释一下什么是闭包
+                </el-button>
+                <el-button @click="sendQuickMessage('如何优化前端性能')" text>
+                  ⚡ 如何优化前端性能
+                </el-button>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 消息列表 -->
           <div 
             v-for="message in currentMessages" 
             :key="message.id"
@@ -98,7 +149,6 @@
                 </el-tooltip>
                 <el-tooltip content="点踩" placement="top">
                   <el-button size="small" circle @click="dislikeMessage(message)">
-                    <el-icon><Thumb /></el-icon>
                   </el-button>
                 </el-tooltip>
                 <el-tooltip content="分享" placement="top">
@@ -110,6 +160,21 @@
               
               <div class="message-time">
                 {{ formatTime(message.timestamp) }}
+              </div>
+            </div>
+          </div>
+          
+          <!-- 发送中提示 -->
+          <div class="sending-message" v-if="isSending">
+            <div class="message assistant">
+              <div class="avatar">
+                <el-avatar :size="40" :src="aiAvatar" />
+              </div>
+              <div class="message-content">
+                <div class="message-bubble loading-bubble">
+                  <el-icon class="typing-icon"><Loading /></el-icon>
+                  <span class="typing-text">正在思考中...</span>
+                </div>
               </div>
             </div>
           </div>
@@ -125,13 +190,13 @@
             resize="none"
             @keydown.enter.prevent="sendMessage"
             class="message-input"
+            :disabled="isSending"
           />
           <div class="input-actions">
-            <el-button size="small" @click="setThinkingMode('deep')">
-              <el-icon><Brain /></el-icon>
+            <el-button size="small" @click="setThinkingMode('deep')" :disabled="isSending">
               深度思考
             </el-button>
-            <el-button size="small" @click="setThinkingMode('web')">
+            <el-button size="small" @click="setThinkingMode('web')" :disabled="isSending">
               <el-icon><Search /></el-icon>
               联网搜索
             </el-button>
@@ -142,6 +207,7 @@
             @click="sendMessage"
             class="send-btn"
             circle
+            :disabled="!inputMessage.trim() || isSending"
           >
             <el-icon><Promotion /></el-icon>
           </el-button>
@@ -152,19 +218,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, ChatLineRound, Close, Promotion, DocumentCopy, Refresh, Star, Thumb, Share, Brain, Search, Sunny, Moon } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, nextTick, onUnmounted, watch,reactive} from 'vue'
+import { ElMessage, ElMessageBox, ElInput } from 'element-plus'
+import { 
+  Plus, ChatLineRound, Close, Promotion, DocumentCopy, 
+  Refresh, Star, Share, Search, Sunny, Moon, Edit,
+  Loading, ChatLineSquare
+} from '@element-plus/icons-vue'
 import { sseChat } from '../../api/ai'
+import { 
+  getUserSessions, 
+  createNewSession, 
+  deleteSession, 
+  updateSessionTitle,
+  getSessionMessages 
+} from '../../api/ai/index'
+import useUserStore from '../../store/modules/user'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
-import 'highlight.js/styles/atom-one-dark.css' // 改用深色主题，匹配图2样式
+import 'highlight.js/styles/atom-one-dark.css'
 
 // 类型定义
 interface Chat {
   id: number | string
   title: string
   createTime: number
+  sessionId?: string
 }
 
 interface Message {
@@ -172,6 +251,14 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+}
+
+interface SessionMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: string
+  sessionId: string
 }
 
 // 静态资源路径
@@ -182,55 +269,70 @@ const aiAvatar = '/src/assets/image/ai-avatar.png'
 const isDarkTheme = ref(false)
 const isHoveredChat = ref<number | string | null>(null)
 const thinkingMode = ref('normal')
+const userStore = useUserStore()
 
-const chatList = ref<Chat[]>([
-  { id: 1, title: '关于项目开发的讨论', createTime: Date.now() - 3600000 },
-  { id: 2, title: '技术问题咨询', createTime: Date.now() - 7200000 },
-  { id: 3, title: '学习建议', createTime: Date.now() - 10800000 }
-])
-
-const messagesMap = ref<Record<number | string, Message[]>>({
-  1: [
-    { id: 1, role: 'user', content: '你好，我想了解如何优化前端性能？', timestamp: Date.now() - 3500000 },
-    { id: 2, role: 'assistant', content: '前端性能优化可以从以下几个方面入手：\n1. 代码压缩和合并\n2. 图片优化\n3. 使用CDN\n4. 懒加载\n5. 缓存策略', timestamp: Date.now() - 3400000 },
-    { id: 3, role: 'user', content: '能具体说说代码压缩吗？', timestamp: Date.now() - 3300000 },
-    { id: 4, role: 'assistant', content: '代码压缩可以通过Webpack、Vite等构建工具实现，常用的插件有TerserWebpackPlugin等。', timestamp: Date.now() - 3200000 }
-  ],
-  2: [
-    { id: 1, role: 'user', content: 'Vue3和Vue2有什么区别？', timestamp: Date.now() - 7100000 },
-    { id: 2, role: 'assistant', content: 'Vue3主要改进包括：Composition API、更好的TypeScript支持、性能优化等。', timestamp: Date.now() - 7000000 }
-  ],
-  3: [
-    { id: 1, role: 'user', content: '如何学习前端开发？', timestamp: Date.now() - 10700000 },
-    { id: 2, role: 'assistant', content: '建议从HTML、CSS、JavaScript基础开始，然后学习框架如Vue或React。', timestamp: Date.now() - 10600000 }
-  ]
-})
-
-const activeChatId = ref<number | string>(1)
+// 会话相关
+const chatList = ref<Chat[]>([])
+const messagesMap = reactive<Record<number | string, Message[]>>({})
+const activeChatId = ref<number | string>('')
 const inputMessage = ref('')
 const isSending = ref(false)
+const isCreatingChat = ref(false)
 const messageContainer = ref<HTMLElement | null>(null)
+const currentCancelStream = ref<(() => void) | null>(null)
 
-// 计算属性
-const currentMessages = computed(() => {
-  return messagesMap.value[activeChatId.value] || []
+// 加载状态
+const loadingMessages = ref(false)
+const loadingChats = ref<Record<string | number, boolean>>({})
+const isLoadingSessions = ref(false)
+const hasMoreSessions = ref(true)
+const currentPage = ref(1)
+const pageSize = 20
+
+// Markdown解析器实例
+const md = new MarkdownIt({
+  html: true,
+  linkify: true,
+  typographer: true,
+  highlight: function (str, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value
+      } catch (__) {}
+    }
+    return hljs.highlightAuto(str).value
+  }
 })
+
+const currentMessages = computed(() => {
+  // 1. 先判断 activeChatId 是否有效（非空）
+  const chatId = activeChatId.value;
+  if (!chatId) {
+    return []; // 无有效对话ID时，返回空数组
+  }
+  
+  // 2. reactive 对象直接访问，无需 .value
+  // 3. 安全判断：messagesMap 中是否存在该 chatId 对应的消息列表
+  return messagesMap[chatId] || [];
+});
 
 const currentChatTitle = computed(() => {
   const chat = chatList.value.find(chat => chat.id === activeChatId.value)
   return chat ? chat.title : '新对话'
 })
 
-// 方法
+// 主题切换
 const toggleTheme = () => {
   isDarkTheme.value = !isDarkTheme.value
 }
 
+// 思考模式设置
 const setThinkingMode = (mode: string) => {
   thinkingMode.value = mode
   ElMessage.success(`已切换到${mode === 'deep' ? '深度思考' : '联网搜索'}模式`)
 }
 
+// 消息操作函数
 const copyMessage = async (message: Message) => {
   try {
     await navigator.clipboard.writeText(message.content)
@@ -256,146 +358,237 @@ const shareMessage = (message: Message) => {
   ElMessage.info('分享功能待实现')
 }
 
+const shareConversation = () => {
+  ElMessage.info('分享对话功能待实现')
+}
 
+const editChatTitle = async () => {
+  const chat = chatList.value.find(chat => chat.id === activeChatId.value)
+  if (!chat) return
 
-const deleteChat = async (chatId: number | string) => {
   try {
-    await ElMessageBox.confirm('确定要删除这个对话吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
+    const { value: newTitle } = await ElMessageBox.prompt(
+      '请输入新的对话标题',
+      '修改标题',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputValue: chat.title,
+        inputPattern: /^.{1,50}$/,
+        inputErrorMessage: '标题长度应在1-50个字符之间'
+      }
+    )
     
-    const index = chatList.value.findIndex(chat => chat.id === chatId)
-    if (index !== -1) {
-      chatList.value.splice(index, 1)
+    if (newTitle && newTitle !== chat.title) {
+      await updateChatTitle(activeChatId.value, newTitle)
     }
-    
-    delete messagesMap.value[chatId]
-    
-    if (activeChatId.value === chatId) {
-      activeChatId.value = chatList.value[0]?.id || ''
-    }
-    
-    ElMessage.success('对话已删除')
   } catch {
-    // 用户取消删除
+    // 用户取消
   }
 }
 
-const sendMessage = async () => {
-  if (!inputMessage.value.trim() || isSending.value) return
+// 加载用户历史会话
+const loadUserSessions = async (page = 1, append = false) => {
+  if (!userStore.token || isLoadingSessions.value) return
   
-  const userMessage: Message = {
-    id: Date.now(),
-    role: 'user',
-    content: inputMessage.value,
-    timestamp: Date.now()
-  }
-  
-  // 添加到当前对话
-  if (!messagesMap.value[activeChatId.value]) {
-    messagesMap.value[activeChatId.value] = []
-  }
-  messagesMap.value[activeChatId.value].push(userMessage)
-  
-  const tempInput = inputMessage.value
-  inputMessage.value = ''
-  isSending.value = true
+  isLoadingSessions.value = true
   
   try {
-    // 模拟AI回复
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: Date.now(),
-        role: 'assistant',
-        content: `这是对"${tempInput}"的回复。思考模式：${thinkingMode.value}`,
-        timestamp: Date.now()
+    const response = await getUserSessions()
+    if (response.sessions && response.sessions.length > 0) {
+      const sessions: Chat[] = response.sessions.map(session => ({
+        id: session.sessionId,
+        title: session.title || '未命名对话',
+        createTime: new Date(session.createdAt).getTime(),
+        sessionId: session.sessionId
+      }))
+      
+      sessions.sort((a, b) => b.createTime - a.createTime)
+      
+      if (append) {
+        chatList.value.push(...sessions)
+      } else {
+        chatList.value = sessions
       }
       
-      messagesMap.value[activeChatId.value].push(aiMessage)
-      isSending.value = false
+      // 检查是否有更多数据
+      hasMoreSessions.value = response.sessions.length >= pageSize
       
-      // 更新对话标题（如果是新对话的第一条消息）
-      if (messagesMap.value[activeChatId.value].length === 2) {
-        const chat = chatList.value.find(chat => chat.id === activeChatId.value)
-        if (chat && chat.title === '新对话') {
-          chat.title = tempInput.slice(0, 20) + (tempInput.length > 20 ? '...' : '')
-        }
+      if (!append && sessions.length > 0 && !activeChatId.value) {
+        // 自动选择最新的会话
+        activeChatId.value = sessions[0].id
+        // 加载该会话的消息
+        await loadSessionMessages(sessions[0].id, sessions[0].sessionId)
       }
+      
+      if (!append) {
+        ElMessage.success(`已加载${response.sessions.length}个历史会话`)
+      }
+    } else {
+      if (!append) {
+        chatList.value = []
+        hasMoreSessions.value = false
+      }
+    }
+  } catch (error: any) {
+    console.error('加载会话失败:', error)
+    
+    if (error.response?.status === 401) {
+      ElMessage.error('登录已过期，请重新登录')
+      userStore.exitLogin()
+    } else if (error.message?.includes('Network Error')) {
+      ElMessage.error('网络连接失败，请检查网络')
+    } else {
+      if (!append) {
+        ElMessage.error(`加载会话失败: ${error.message || '未知错误'}`)
+      }
+    }
+  } finally {
+    isLoadingSessions.value = false
+  }
+}
+
+// 加载更多会话
+const loadMoreSessions = async () => {
+  if (!hasMoreSessions.value || isLoadingSessions.value) return
+  
+  currentPage.value += 1
+  await loadUserSessions(currentPage.value, true)
+}
+
+// 加载会话历史消息
+const loadSessionMessages = async (chatId: number | string, sessionId?: string) => {
+  if (!sessionId || !userStore.token) {
+    messagesMap[chatId] = []
+    return
+  }
+  
+  if (messagesMap[chatId] && messagesMap[chatId].length > 0) {
+    return // 已经加载过了
+  }
+  
+  loadingMessages.value = true
+  loadingChats.value[chatId] = true
+  
+  try {
+    // 假设 getSessionMessages 返回 { messages: SessionMessage[] }
+    const response = await getSessionMessages(sessionId)
+    console.log("response:",response);
+    if (response.messages && response.messages.length > 0) {
+      const messages: Message[] = response.messages.map((msg: SessionMessage, index: number) => ({
+        id: msg.id || `${sessionId}_${index}`,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.timestamp).getTime() || Date.now() - (response.messages.length - index) * 60000
+      }))
+      
+      messagesMap[chatId] = messages
       
       nextTick(() => {
-        if (messageContainer.value) {
-          messageContainer.value.scrollTop = messageContainer.value.scrollHeight
-        }
+        scrollToBottom()
+        setupCopyButtons()
       })
-    }, 1000)
-  } catch (error) {
-    isSending.value = false
-    ElMessage.error('发送失败')
+    } else {
+      messagesMap[chatId] = []
+    }
+  } catch (error: any) {
+    console.error('加载消息失败:', error)
+    messagesMap[chatId] = []
+    
+    if (error.response?.status !== 404) { // 404表示没有消息，不显示错误
+      ElMessage.error(`加载消息失败: ${error.message || '未知错误'}`)
+    }
+  } finally {
+    loadingMessages.value = false
+    delete loadingChats.value[chatId]
   }
 }
-
-const formatTime = (timestamp: number) => {
-  return new Date(timestamp).toLocaleTimeString()
-}
-
-const renderMarkdown = (content: string) => {
-  const md = new MarkdownIt({
-    highlight: (str, lang) => {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang }).value}</code></pre>`
-        } catch (__) {}
-      }
-      return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`
-    }
-  })
-  
-  return md.render(content)
-}
-const currentCancelStream = ref<(() => void) | null>(null)
-
-// 计算属性：当前激活对话的消息列表
-const currentMessages = computed(() => 
-  messagesMap.value[activeChatId.value] || []
-)
 
 // 选择对话
-const selectChat = (chatId: number | string) => {
-  currentCancelStream.value?.()
-  currentCancelStream.value = null
-  activeChatId.value = chatId
-  nextTick(() => {
-    scrollToBottom()
-    setupCopyButtons()
-  })
-}
-
-// 新建对话
-const startNewChat = () => {
+const selectChat = async (chatId: number | string) => {
+  if (activeChatId.value === chatId || loadingChats.value[chatId]) return
+  
   currentCancelStream.value?.()
   currentCancelStream.value = null
   
-  const newChatId = Date.now()
-  const newChat: Chat = {
-    id: newChatId,
-    title: '新对话',
-    createTime: Date.now()
+  activeChatId.value = chatId
+  
+  const chat = chatList.value.find(c => c.id === chatId)
+  if (chat && chat.sessionId && (!messagesMap[chatId] || messagesMap[chatId].length === 0)) {
+    await loadSessionMessages(chatId, chat.sessionId)
+  } else {
+    nextTick(() => {
+      scrollToBottom()
+      setupCopyButtons()
+    })
+  }
+}
+const startNewChat = async () => {
+  console.log("开始发送消息");
+  if (!userStore.token) {
+    ElMessage.warning('请先登录')
+    userStore.goToLogin()
+    return
   }
   
-  chatList.value.unshift(newChat)
-  messagesMap.value[newChatId] = []
-  activeChatId.value = newChatId
+  if (isCreatingChat.value) return
   
-  ElMessage.success('已创建新对话')
-  nextTick(() => scrollToBottom())
+  isCreatingChat.value = true
+  
+  try {
+    currentCancelStream.value?.()
+    currentCancelStream.value = null
+    
+    const response = await createNewSession()
+  console.log('API响应状态:', response)
+    // 添加响应验证
+    if (!response || !response.sessionId) {
+      throw new Error('API响应无效或缺少sessionId')
+    }
+    
+    console.log('创建会话响应:', response) // 调试日志
+    
+    const newChat: Chat = {
+      id: response.sessionId,
+      title: '新对话',
+      createTime: Date.now(),
+      sessionId: response.sessionId
+    }
+    
+    // 添加到列表顶部
+    chatList.value.unshift(newChat)
+    messagesMap[response.sessionId] = []
+    activeChatId.value = response.sessionId
+    
+    nextTick(() => {
+      scrollToBottom()
+      ElMessage.success('已创建新对话')
+    })
+  } catch (error: any) {
+    console.error('创建会话失败:', error)
+    // 创建失败时，使用本地临时ID
+    const newChatId = `temp_${Date.now()}`
+    const newChat: Chat = {
+      id: newChatId,
+      title: '新对话',
+      createTime: Date.now()
+    }
+    
+    chatList.value.unshift(newChat)
+    messagesMap[newChatId] = []
+    activeChatId.value = newChatId
+    
+    ElMessage.warning('创建会话失败，使用临时会话')
+    nextTick(() => scrollToBottom())
+  } finally {
+    isCreatingChat.value = false
+  }
 }
 
 // 删除对话
 const deleteChat = async (chatId: number | string) => {
   try {
-    await ElMessageBox.confirm('确定要删除这个对话吗？', '提示', {
+    await ElMessageBox.confirm('确定要删除这个对话吗？删除后无法恢复', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
@@ -406,32 +599,100 @@ const deleteChat = async (chatId: number | string) => {
       currentCancelStream.value = null
     }
     
+    const chatToDelete = chatList.value.find(chat => chat.id === chatId)
     const index = chatList.value.findIndex(chat => chat.id === chatId)
+    
     if (index !== -1) {
+      // 先删除本地数据
       chatList.value.splice(index, 1)
-      delete messagesMap.value[chatId]
+      delete messagesMap[chatId]
       
+      // 如果删除的是当前激活的对话，切换到第一个对话
       if (activeChatId.value === chatId) {
         activeChatId.value = chatList.value[0]?.id || ''
+        if (activeChatId.value) {
+          const newActiveChat = chatList.value.find(c => c.id === activeChatId.value)
+          if (newActiveChat?.sessionId) {
+            await loadSessionMessages(activeChatId.value, newActiveChat.sessionId)
+          }
+        }
+      }
+      
+      // 如果对话有sessionId（来自后端的真实对话），调用API删除
+      if (chatToDelete?.sessionId) {
+        try {
+          await deleteSession(chatToDelete.sessionId)
+        } catch (apiError) {
+          console.error('API删除失败:', apiError)
+        }
       }
       
       ElMessage.success('对话已删除')
-      nextTick(() => scrollToBottom())
     }
   } catch {
     // 用户取消删除
   }
 }
 
-// 发送消息
-const sendMessage = async () => {
-  if (!inputMessage.value.trim()) {
-    ElMessage.warning('请输入消息内容')
-    return
+// 更新对话标题
+const updateChatTitle = async (chatId: number | string, newTitle: string) => {
+  const chat = chatList.value.find(chat => chat.id === chatId)
+  if (!chat) return
+  
+  if (!newTitle.trim()) {
+    newTitle = '未命名对话'
   }
   
+  const oldTitle = chat.title
+  chat.title = newTitle
+  
+  // 如果对话有sessionId，调用API更新
+  if (chat.sessionId) {
+    try {
+      await updateSessionTitle(chat.sessionId, newTitle)
+      ElMessage.success('标题已更新')
+    } catch (apiError) {
+      console.error('API更新标题失败:', apiError)
+      // 恢复原标题
+      chat.title = oldTitle
+      ElMessage.error('标题更新失败')
+    }
+  }
+}
+
+// 快速发送消息
+const sendQuickMessage = (message: string) => {
   if (!activeChatId.value) {
-    ElMessage.warning('请先选择或创建一个对话')
+    startNewChat().then(() => {
+      setTimeout(() => {
+        inputMessage.value = message
+        sendMessage()
+      }, 100)
+    })
+  } else {
+    inputMessage.value = message
+    sendMessage()
+  }
+}
+
+// 发送消息
+const sendMessage = async () => {
+  console.log("开始发送消息");
+  const messageContent = inputMessage.value.trim()
+  if (!messageContent || isSending.value) return
+  
+  if (!activeChatId.value) {
+    await startNewChat()
+    // 等待新对话创建完成
+    await nextTick()
+  }
+  
+  if (!activeChatId.value) return
+  
+  // 检查是否登录
+  if (!userStore.token) {
+    ElMessage.warning('请先登录')
+    userStore.goToLogin()
     return
   }
   
@@ -441,21 +702,20 @@ const sendMessage = async () => {
   isSending.value = true
   
   const userMessage: Message = {
-    id: Date.now(),
+    id: `user_${Date.now()}`,
     role: 'user',
-    content: inputMessage.value.trim(),
+    content: messageContent,
     timestamp: Date.now()
   }
   
-  if (!messagesMap.value[activeChatId.value]) {
-    messagesMap.value[activeChatId.value] = []
+  if (!messagesMap[activeChatId.value]) {
+    messagesMap[activeChatId.value] = []
   }
   
-  messagesMap.value[activeChatId.value].push(userMessage)
-  const inputVal = inputMessage.value.trim()
+  messagesMap[activeChatId.value].push(userMessage)
   inputMessage.value = ''
   
-  const aiMessageId = Date.now() + 1
+  const aiMessageId = `ai_${Date.now()}`
   const aiMessage: Message = {
     id: aiMessageId,
     role: 'assistant',
@@ -463,19 +723,19 @@ const sendMessage = async () => {
     timestamp: Date.now()
   }
   
-  messagesMap.value[activeChatId.value].push(aiMessage)
+  messagesMap[activeChatId.value].push(aiMessage)
   scrollToBottom()
   
   try {
     const cancelStream = await sseChat(
       String(activeChatId.value),
-      inputVal,
+      messageContent,
       (chunk) => {
-        const aiMessageIndex = messagesMap.value[activeChatId.value].findIndex(
+        const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
           msg => msg.id === aiMessageId
         )
         if (aiMessageIndex !== -1) {
-          messagesMap.value[activeChatId.value][aiMessageIndex].content += chunk
+          messagesMap[activeChatId.value][aiMessageIndex].content += chunk
           scrollToBottom()
         }
       },
@@ -483,35 +743,38 @@ const sendMessage = async () => {
         ElMessage.error('AI服务连接错误：' + error.message)
         isSending.value = false
         
-        const aiMessageIndex = messagesMap.value[activeChatId.value].findIndex(
+        const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
           msg => msg.id === aiMessageId && msg.content === ''
         )
         if (aiMessageIndex !== -1) {
-          messagesMap.value[activeChatId.value].splice(aiMessageIndex, 1)
+          messagesMap[activeChatId.value].splice(aiMessageIndex, 1)
         }
       },
       () => {
         isSending.value = false
         currentCancelStream.value = null
         
+        // 更新对话标题（如果是新对话的第一条消息）
         const currentChat = chatList.value.find(chat => chat.id === activeChatId.value)
         if (currentChat && currentChat.title === '新对话') {
-          currentChat.title = inputVal.slice(0, 20) + (inputVal.length > 20 ? '...' : '')
+          const newTitle = messageContent.slice(0, 20) + (messageContent.length > 20 ? '...' : '')
+          updateChatTitle(activeChatId.value, newTitle)
         }
-        nextTick(() => setupCopyButtons()) // 确保DOM更新后再绑定
+        
+        nextTick(() => setupCopyButtons())
       }
     )
     
     currentCancelStream.value = cancelStream
-  } catch (error) {
-    ElMessage.error('发送消息失败：' + (error as Error).message)
+  } catch (error: any) {
+    ElMessage.error('发送消息失败：' + (error.message || '未知错误'))
     isSending.value = false
     
-    const aiMessageIndex = messagesMap.value[activeChatId.value].findIndex(
+    const aiMessageIndex = messagesMap[activeChatId.value].findIndex(
       msg => msg.id === aiMessageId && msg.content === ''
     )
     if (aiMessageIndex !== -1) {
-      messagesMap.value[activeChatId.value].splice(aiMessageIndex, 1)
+      messagesMap[activeChatId.value].splice(aiMessageIndex, 1)
     }
   }
 }
@@ -533,25 +796,9 @@ const formatTime = (timestamp: number) => {
   })
 }
 
-// Markdown解析器实例（集成代码高亮）
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-  highlight: function (str, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(str, { language: lang, ignoreIllegals: true }).value
-      } catch (__) {}
-    }
-    return hljs.highlightAuto(str).value
-  }
-})
-
-// 渲染Markdown内容（添加代码块头部+复制按钮）
+// 渲染Markdown内容
 const renderMarkdown = (content: string) => {
   const rendered = md.render(content)
-  // 匹配代码块并添加包装结构
   return rendered.replace(/<pre><code class="([^"]*language-([^"]*))"[^>]*>([\s\S]*?)<\/code><\/pre>/g, 
     (_, langClass, langName, codeContent) => {
       const displayLang = langName || '代码'
@@ -559,7 +806,7 @@ const renderMarkdown = (content: string) => {
         <div class="code-header">
           <span class="code-language">${displayLang}</span>
           <button class="copy-btn">
-            <el-icon class="copy-icon"><DocumentCopy /></el-icon>
+            <span class="copy-icon">📋</span>
             <span class="copy-text">复制</span>
             <span class="copied-text">已复制</span>
           </button>
@@ -575,7 +822,6 @@ const setupCopyButtons = () => {
   nextTick(() => {
     const copyButtons = document.querySelectorAll('.copy-btn')
     copyButtons.forEach(button => {
-      // 先移除旧事件，避免重复绑定
       button.removeEventListener('click', handleCopy)
       button.addEventListener('click', handleCopy)
     })
@@ -595,7 +841,6 @@ const handleCopy = async function(this: HTMLButtonElement) {
     this.classList.add('copied')
     setTimeout(() => this.classList.remove('copied'), 2000)
   } catch (err) {
-    // 降级方案
     const textarea = document.createElement('textarea')
     textarea.value = codeText
     document.body.appendChild(textarea)
@@ -610,28 +855,30 @@ const handleCopy = async function(this: HTMLButtonElement) {
 
 // 组件挂载时初始化
 onMounted(async () => {
-  try {
+  // 检查用户是否登录
+  if (userStore.token) {
     // 加载用户历史会话
-    const sessionsResponse = await getUserSessions()
-    const sessions: Chat[] = sessionsResponse.sessions.map(session => ({
-      id: session.sessionId,
-      title: session.title,
-      createTime: new Date(session.createdAt).getTime(),
-      sessionId: session.sessionId
-    }))
-    
-    chatList.value = sessions
-    
-    if (sessions.length > 0) {
-      activeChatId.value = sessions[0].id
-    }
-  } catch (error) {
-    console.error('加载会话列表失败:', error)
-    ElMessage.error('加载会话列表失败')
+    await loadUserSessions()
+  } else {
+    // 未登录状态，显示提示
+    chatList.value = []
   }
   
   scrollToBottom()
   nextTick(() => setupCopyButtons())
+})
+
+// 监听登录状态变化
+watch(() => userStore.token, (newToken) => {
+  if (newToken) {
+    // 用户登录了，加载历史会话
+    loadUserSessions()
+  } else {
+    // 用户退出登录，清空数据
+    chatList.value = []
+    messagesMap = {}
+    activeChatId.value = ''
+  }
 })
 
 // 组件卸载时清理
@@ -650,28 +897,55 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   background-color: #f5f5f5;
+  
+  &.dark-theme {
+    background-color: #1a1a1a;
+    
+    .chat-sidebar,
+    .chat-main,
+    .conversation-header,
+    .input-area {
+      background-color: #2d2d2d;
+      border-color: #404040;
+    }
+    
+    .chat-item {
+      color: #e0e0e0;
+      
+      &:hover {
+        background-color: #3d3d3d;
+      }
+      
+      &.active {
+        background-color: #404040;
+        color: #409eff;
+      }
+    }
+    
+    .message-bubble {
+      background-color: #3d3d3d;
+      color: #e0e0e0;
+    }
+    
+    .user .message-bubble {
+      background-color: #409eff;
+      color: white;
+    }
+  }
 }
 
-.chat-header {
-  padding: 16px 24px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  
-  h2 {
-    margin: 0;
-    color: #303133;
-    font-size: 18px;
-    font-weight: 600;
-  }
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
 }
 
 .chat-layout {
   flex: 1;
   display: flex;
   overflow: hidden;
+  height: calc(100vh - 60px);
 }
 
 .chat-sidebar {
@@ -679,10 +953,51 @@ onUnmounted(() => {
   background: #fff;
   border-right: 1px solid #e4e7ed;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 16px;
+  border-bottom: 1px solid #e4e7ed;
+  
+  .brand-logo {
+    margin-bottom: 16px;
+    
+    .logo-text {
+      font-size: 20px;
+      font-weight: bold;
+      color: #409eff;
+    }
+  }
+  
+  .new-chat-btn {
+    width: 100%;
+  }
 }
 
 .chat-list {
+  flex: 1;
   padding: 16px;
+  overflow-y: auto;
+  
+  .load-more,
+  .loading-sessions {
+    text-align: center;
+    padding: 12px;
+    color: #909399;
+  }
+  
+  .loading-sessions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  
+  .empty-sessions {
+    padding: 40px 0;
+  }
 }
 
 .chat-item {
@@ -698,7 +1013,7 @@ onUnmounted(() => {
   &:hover {
     background: #f5f7fa;
     
-    .delete-btn {
+    .chat-actions .delete-btn {
       opacity: 1;
     }
   }
@@ -706,6 +1021,11 @@ onUnmounted(() => {
   &.active {
     background: #ecf5ff;
     color: #409eff;
+  }
+  
+  &.loading {
+    opacity: 0.7;
+    cursor: wait;
   }
   
   .chat-title {
@@ -717,19 +1037,35 @@ onUnmounted(() => {
     white-space: nowrap;
   }
   
-  .delete-btn {
-    opacity: 0;
-    color: #909399;
-    font-size: 12px;
-    padding: 4px;
-    border-radius: 4px;
-    transition: all 0.3s;
+  .chat-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
     
-    &:hover {
-      background: #f56c6c;
-      color: #fff;
+    .delete-btn {
+      opacity: 0;
+      color: #909399;
+      font-size: 12px;
+      padding: 4px;
+      border-radius: 4px;
+      transition: all 0.3s;
+      
+      &:hover {
+        background: #f56c6c;
+        color: #fff;
+      }
+    }
+    
+    .loading-icon {
+      animation: rotate 1s linear infinite;
+      color: #409eff;
     }
   }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .chat-main {
@@ -739,10 +1075,125 @@ onUnmounted(() => {
   background: #fff;
 }
 
+.conversation-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  
+  .title-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    
+    .conversation-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #303133;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .edit-title-btn {
+      width: 28px;
+      height: 28px;
+      opacity: 0.7;
+      
+      &:hover {
+        opacity: 1;
+      }
+    }
+  }
+}
+
 .message-container {
   flex: 1;
   padding: 24px;
   overflow-y: auto;
+  position: relative;
+  
+  .loading-messages,
+  .empty-messages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    color: #909399;
+  }
+  
+  .loading-messages {
+    gap: 12px;
+    
+    .loading-icon {
+      font-size: 24px;
+      animation: rotate 1s linear infinite;
+    }
+  }
+  
+  .empty-messages {
+    .empty-content {
+      text-align: center;
+      max-width: 400px;
+      
+      .empty-icon {
+        font-size: 48px;
+        color: #c0c4cc;
+        margin-bottom: 16px;
+      }
+      
+      h4 {
+        margin: 0 0 8px 0;
+        color: #303133;
+      }
+      
+      p {
+        margin: 0 0 24px 0;
+        color: #909399;
+      }
+      
+      .quick-starts {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        width: 100%;
+        
+        .el-button {
+          justify-content: flex-start;
+          padding: 12px 16px;
+          border: 1px solid #e4e7ed;
+          border-radius: 8px;
+          text-align: left;
+          color: #303133;
+          
+          &:hover {
+            background: #f5f7fa;
+            border-color: #409eff;
+          }
+        }
+      }
+    }
+  }
+  
+  .sending-message {
+    .loading-bubble {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      
+      .typing-icon {
+        animation: rotate 1s linear infinite;
+      }
+      
+      .typing-text {
+        opacity: 0.8;
+      }
+    }
+  }
   
   .message {
     display: flex;
@@ -754,6 +1205,7 @@ onUnmounted(() => {
       .message-content {
         margin-right: 12px;
         margin-left: 0;
+        align-items: flex-end;
       }
       
       .message-bubble {
@@ -764,6 +1216,11 @@ onUnmounted(() => {
     }
     
     &.assistant {
+      .message-content {
+        margin-left: 12px;
+        align-items: flex-start;
+      }
+      
       .message-bubble {
         background: #f5f7fa;
         color: #303133;
@@ -777,7 +1234,8 @@ onUnmounted(() => {
   }
   
   .message-content {
-    margin-left: 12px;
+    display: flex;
+    flex-direction: column;
     max-width: 60%;
   }
   
@@ -787,36 +1245,24 @@ onUnmounted(() => {
     line-height: 1.6;
     word-break: break-word;
     white-space: pre-wrap;
+    margin-bottom: 8px;
   }
-
-  /* Markdown内容样式 */
-  .markdown-content {
-    // 覆盖默认样式，统一用代码块包装器的样式
-    pre {
-      margin: 0 !important;
-      padding: 0 !important;
-      background: transparent !important;
-      border-radius: 0 !important;
-    }
-    code {
-      background: transparent !important;
-      padding: 0 !important;
-    }
-    ul, ol {
-      padding-left: 20px;
-      margin: 8px 0;
-    }
-    h1, h2, h3 {
-      margin: 12px 0 8px;
-      font-weight: 600;
+  
+  .message-actions {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 4px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    
+    .message:hover & {
+      opacity: 1;
     }
   }
   
   .message-time {
-    margin-top: 4px;
     font-size: 12px;
     color: #909399;
-    text-align: center;
   }
 }
 
@@ -828,38 +1274,92 @@ onUnmounted(() => {
   align-items: flex-end;
   gap: 12px;
   
-  :deep(.el-textarea__inner) {
-    resize: none;
-    box-shadow: none;
-    border-radius: 8px;
-    
-    &:focus {
-      box-shadow: 0 0 0 2px rgba(64, 158, 255, 0.2);
-      border-color: #409eff;
-    }
+  .message-input {
+    flex: 1;
+  }
+  
+  .input-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-right: 12px;
   }
   
   .send-btn {
+    width: 56px;
     height: 56px;
-    padding: 0 20px;
-    border-radius: 8px;
+    border-radius: 50%;
+  }
+}
+
+/* 深色主题适配 */
+.dark-theme {
+  .conversation-header {
+    .conversation-title {
+      color: #e0e0e0;
+    }
+  }
+  
+  .message-container {
+    .assistant .message-bubble {
+      background-color: #3d3d3d;
+      color: #e0e0e0;
+    }
+    
+    .message-time {
+      color: #a0a0a0;
+    }
+    
+    .empty-messages {
+      .empty-content {
+        h4 {
+          color: #e0e0e0;
+        }
+        
+        p {
+          color: #a0a0a0;
+        }
+        
+        .quick-starts .el-button {
+          border-color: #404040;
+          color: #e0e0e0;
+          
+          &:hover {
+            background: #3d3d3d;
+            border-color: #409eff;
+          }
+        }
+      }
+    }
+  }
+  
+  .input-area {
+    :deep(.el-textarea__inner) {
+      background-color: #3d3d3d;
+      border-color: #404040;
+      color: #e0e0e0;
+      
+      &::placeholder {
+        color: #a0a0a0;
+      }
+    }
   }
 }
 </style>
 
-<!-- 全局样式（解决scoped作用域问题） -->
+<!-- 全局样式 -->
 <style>
-/* 代码块整体样式（匹配图2深色主题） */
+/* 代码块整体样式 */
 .code-block-wrapper {
   position: relative;
   margin: 12px 0;
   border-radius: 8px;
   overflow: hidden;
-  background-color: #282c34; /* 深色背景 */
+  background-color: #282c34;
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
-/* 代码块头部（语言+复制按钮） */
+/* 代码块头部 */
 .code-header {
   display: flex;
   justify-content: space-between;
@@ -873,6 +1373,7 @@ onUnmounted(() => {
   font-size: 12px;
   color: #abb2bf;
   font-weight: 500;
+  text-transform: uppercase;
 }
 
 /* 复制按钮样式 */
@@ -880,7 +1381,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 4px 12px;
   border: none;
   border-radius: 4px;
   background-color: transparent;
@@ -901,8 +1402,7 @@ onUnmounted(() => {
 }
 
 .copy-icon {
-  width: 14px;
-  height: 14px;
+  font-size: 14px;
 }
 
 /* 复制/已复制文本切换 */
@@ -920,6 +1420,7 @@ onUnmounted(() => {
 .code-block-wrapper pre {
   padding: 16px;
   overflow-x: auto;
+  margin: 0;
 }
 
 .code-block-wrapper code {
@@ -927,5 +1428,28 @@ onUnmounted(() => {
   font-size: 14px;
   line-height: 1.6;
   color: #abb2bf;
+  background: transparent;
+}
+
+/* 深色主题适配 */
+.dark-theme .code-block-wrapper {
+  background-color: #1e1e1e;
+}
+
+.dark-theme .code-header {
+  background-color: #2d2d2d;
+  border-color: #404040;
+}
+
+.dark-theme .code-language {
+  color: #d4d4d4;
+}
+
+.dark-theme .copy-btn {
+  color: #d4d4d4;
+}
+
+.dark-theme .copy-btn:hover {
+  background-color: #404040;
 }
 </style>
