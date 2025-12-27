@@ -1,8 +1,12 @@
+// store/modules/user.ts
 import { defineStore } from 'pinia'
 import { GET_TOKEN, REMOVE_TOKEN, SET_TOKEN } from '../../utils/token';
 import { ReqLogin, ReqRegister } from '../../api/user';
 import routes from '../../router/routes';
-import router from '../../router'; // 确保导入了router
+import router from '../../router';
+
+// 默认头像路径常量
+const DEFAULT_AVATAR = '/src/assets/icons/default_avat.svg';
 
 const useUserStore = defineStore('UserStore', {
     state: () => {
@@ -16,12 +20,21 @@ const useUserStore = defineStore('UserStore', {
         // 添加getter来判断是否登录
         isLoggedIn: (state) => {
             return !!state.token;
+        },
+        
+        // 添加获取用户头像的方法
+        userAvatar: (state) => {
+            // 如果用户信息存在且有头像路径，则返回用户头像
+            if (state.userInfo && state.userInfo.avatar) {
+                return state.userInfo.avatar;
+            }
+            // 否则返回默认头像
+            return DEFAULT_AVATAR;
         }
     },
     actions: {
         async login(data) {
             try {
-                // 直接调用请求，错误已在axios拦截器中处理
                 let result = await ReqLogin(data);
                 console.log("登录响应:", result);
                 if (result) {
@@ -35,14 +48,11 @@ const useUserStore = defineStore('UserStore', {
                     SET_TOKEN(this.token);
                     
                     console.log('登录成功:', this.userInfo);
-                    return result; // 返回完整结果
+                    return result;
                 }
                 return null;
             } catch (error) {
-                // 错误已经在axios拦截器中通过ElMessage显示了
-                // 这里可以记录日志或做其他处理
                 console.error('登录过程中捕获的错误:', error);
-                // 不返回任何值或返回null，让调用方知道登录失败
                 return null;
             }
         },
@@ -53,13 +63,10 @@ const useUserStore = defineStore('UserStore', {
                 console.log("注册响应:", result);
                 
                 if (result) {
-                    // 注册成功后自动登录
-                    // 根据你的后端设计，可能需要在注册后调用登录
                     return result;
                 }
                 return null;
             } catch (error) {
-                // 错误已经在axios拦截器中处理
                 console.error('注册过程中捕获的错误:', error);
                 return null;
             }
@@ -68,38 +75,45 @@ const useUserStore = defineStore('UserStore', {
         async exitLogin() {
             try {
                 // 可以添加退出登录的API调用
-                // await ReqLogout(); // 如果有退出接口
             } catch (error) {
-                // 退出失败也继续执行本地清理
                 console.error('退出登录API错误:', error);
             } finally {
-                // 无论如何都执行本地清理
                 this.token = '';
                 this.userInfo = null;
                 localStorage.removeItem('userInfo');
                 REMOVE_TOKEN();
-                
-                // 跳转到登录页
                 router.push('/login');
             }
         },
         
-        // 添加一个跳转到个人中心的方法
+        // 添加更新用户信息的方法
+        async updateUserInfo(newUserInfo) {
+            if (newUserInfo) {
+                this.userInfo = { ...this.userInfo, ...newUserInfo };
+                localStorage.setItem('userInfo', JSON.stringify(this.userInfo));
+            }
+        },
+        
+        // 添加更新用户头像的方法
+        async updateAvatar(avatarUrl) {
+            if (this.userInfo) {
+                this.userInfo.avatar = avatarUrl;
+                localStorage.setItem('userInfo', JSON.stringify(this.userInfo));
+            }
+        },
+        
         goToUserCenter() {
             if (this.isLoggedIn && this.userInfo && this.userInfo.id) {
                 router.push(`/user/${this.userInfo.id}`);
             } else {
-                // 否则跳转到通用个人中心页
                 router.push('/user/center');
             }
         },
         
-        // 跳转到登录页的方法
         goToLogin() {
             router.push('/login');
         },
         
-        // 刷新用户信息
         async refreshUserInfo() {
             if (!this.isLoggedIn) return;
             
