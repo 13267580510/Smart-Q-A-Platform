@@ -157,6 +157,11 @@
                     <el-icon><Share /></el-icon>
                   </el-button>
                 </el-tooltip>
+                 <el-tooltip content="不满意此回答" placement="top">
+                  <el-button size="small" circle @click="goToAskPage(message)">
+                    <el-icon><Position /></el-icon>
+                  </el-button>
+                </el-tooltip>
               </div>
               
               <div class="message-time">
@@ -224,7 +229,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Plus, ChatLineRound, Close, Promotion, DocumentCopy, 
   Refresh, Star, Share, Search, Sunny, Moon, Edit,
-  Loading, ChatLineSquare
+  Loading, ChatLineSquare,Position
 } from '@element-plus/icons-vue'
 import { sseChat } from '../../api/ai'
 import { 
@@ -238,6 +243,8 @@ import useUserStore from '../../store/modules/user'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
 import 'highlight.js/styles/atom-one-dark.css'
+import { useRouter } from 'vue-router' // 引入路由
+const router = useRouter()
 
 // 类型定义
 interface Chat {
@@ -952,6 +959,20 @@ const handleCopy = async function(this: HTMLButtonElement) {
   }
 }
 
+
+// 新增：跳转到提问页面
+const goToAskPage = (message: Message) => {
+  // 可以在这里传递当前不满意的消息ID或内容作为参数
+  router.push({
+    path: '/ask',
+    query: {
+      unsatisfiedMessageId: message.id,
+      sessionId: activeChatId.value,
+      content: encodeURIComponent(message.content) // 编码消息内容
+    }
+  })
+}
+
 // 组件挂载时初始化
 onMounted(async () => {
   // 检查用户是否登录
@@ -1350,7 +1371,7 @@ onUnmounted(() => {
     display: flex;
     gap: 4px;
     margin-bottom: 4px;
-    opacity: 0;
+    opacity: 1;
     transition: opacity 0.3s;
     
     .message:hover & {
