@@ -2,7 +2,7 @@
     <div class="files-container">
         <el-card style="margin-bottom: 20px;">
             <div class="search-header">
-                <el-select v-model="selectedCategory" placeholder="选择分类" style="width: 200px; margin-right: 10px;">
+                <el-select v-model="selectedCategory" placeholder="选择分类" style="width: 200px; margin-right: 10px;" @change="handleCategoryChange">
                     <el-option label="全部" value="all"></el-option>
                     <el-option v-for="category in categories" :key="category" :label="category" :value="category"></el-option>
                 </el-select>
@@ -152,16 +152,11 @@ const loadFiles = async (page: number, showMessage = false) => {
          params.category = selectedCategory.value
         
         console.log("准备获取文件列表，参数为:",params)
-        const response = await ReqGetFileList(params)
-        if (response.data.success) {
-            fileList.value = response.data.data.content
-            totalElements.value = response.data.data.totalElements
-            if (showMessage) {
-                ElMessage.success('获取文件列表成功')
-            }
-        } else {
-            ElMessage.error('获取文件列表失败：' + response.data.message)
-        }
+        const data = await ReqGetFileList(params)
+            console.log("获取文件列表成功:", data) // 调试信息，查看返回数据
+            fileList.value = data.content;
+            totalElements.value = data.totalElements;
+            
     } catch (error) {
         ElMessage.error('获取文件列表失败：网络异常')
     }
@@ -226,6 +221,12 @@ const downloadFile = async (file: any) => {
     } catch (error) {
         ElMessage.error('下载文件失败：网络异常')
     }
+}
+
+// 分类切换处理
+const handleCategoryChange = () => {
+    currentPage.value = 1
+    loadFiles(1, true)
 }
 
 // 分页处理
