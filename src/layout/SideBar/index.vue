@@ -29,6 +29,10 @@
                     <el-button :icon="Document" circle></el-button>
                     <p>我的举报</p>
                 </li>
+                <li @click="gotoResource">
+                    <el-button :icon="Document" circle></el-button>
+                    <p >资源站</p>
+                </li>
             </ul>
         </div>
         <div class="create-box">
@@ -75,10 +79,17 @@
 <script setup lang="ts">
 import { Avatar, Document, Plus, HelpFilled } from '@element-plus/icons-vue'
 import { ref } from 'vue';
+import {useRouter} from "vue-router";   
 const pageCount = ref(3);
+const router = useRouter();
+
 const pageNo = ref(0);
 const changeUserList = ()=>{
     console.log(pageCount.value,pageNo.value)
+}
+
+const gotoResource = ()=>{
+    router.push('/files')
 }
 </script>
 

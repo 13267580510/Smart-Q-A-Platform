@@ -118,6 +118,14 @@ const routes = [
                 meta: {
                     title: 'AI智能助手'
                 },
+            },
+            {
+                path: '/files',
+                component: () => import('../view/files/index.vue'),
+                name: 'files',
+                meta: {
+                    title: '资源站'
+                },
             }
         ]
     },

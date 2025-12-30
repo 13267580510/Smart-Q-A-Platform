@@ -29,6 +29,8 @@ export enum HttpStatus {
 
 // 类型守卫：判断是否为成功响应
 export const isSuccessResponse = <T = any>(response: ApiResponse<T>): response is ApiResponse<T> => {
+  console.log("response.success === true：",response.success === true);
+  console.log("response.status ：",response);
   return response.success === true && response.status === HttpStatus.OK;
 };
 

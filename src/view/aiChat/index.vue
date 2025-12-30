@@ -138,26 +138,7 @@
                     <el-icon><DocumentCopy /></el-icon>
                   </el-button>
                 </el-tooltip>
-                <el-tooltip content="刷新" placement="top">
-                  <el-button size="small" circle @click="regenerateMessage(message)">
-                    <el-icon><Refresh /></el-icon>
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip content="点赞" placement="top">
-                  <el-button size="small" circle @click="likeMessage(message)">
-                    <el-icon><Star /></el-icon>
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip content="点踩" placement="top">
-                  <el-button size="small" circle @click="dislikeMessage(message)">
-                  </el-button>
-                </el-tooltip>
-                <el-tooltip content="分享" placement="top">
-                  <el-button size="small" circle @click="shareMessage(message)">
-                    <el-icon><Share /></el-icon>
-                  </el-button>
-                </el-tooltip>
-                 <el-tooltip content="不满意此回答" placement="top">
+                 <el-tooltip content="不满意此回答，前往提问" placement="top">
                   <el-button size="small" circle @click="goToAskPage(message)">
                     <el-icon><Position /></el-icon>
                   </el-button>
