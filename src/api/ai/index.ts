@@ -75,6 +75,66 @@ export interface SessionMessagesResponse {
   hasMore: boolean;
 }
 
+/**
+ * 文件上传结果接口
+ */
+interface FileUploadResult {
+  sessionId: string;
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  extractedText: string;
+  textLength: number;
+  question?: string;
+  aiResponse?: string;
+  success: boolean;
+  uploadTime: string;
+  errorMessage?: string;
+}
+
+/**
+ * 文件上传请求参数接口
+ */
+ interface FileUploadParams {
+  sessionId: string;
+  file: File;
+  question?: string;
+}
+
+/**
+ * OCR识别结果接口
+ */
+ interface OcrResult {
+  originalFilename: string;
+  fileSize: number;
+  recognizedText: string;
+  textLength: number;
+  success: boolean;
+}
+
+
+/**
+ * 支持的文件类型
+ */
+ interface SupportedFormats {
+  image: string[];
+  pdf: string[];
+  document: string[];
+  maxSize: string;
+  notes: string;
+}
+
+
+/**
+ * OCR服务状态
+ */
+ interface OcrStatus {
+  service: string;
+  status: 'UP' | 'DOWN' | 'ERROR';
+  timestamp: number;
+  error?: string;
+}
+
 // ==================== 会话管理API ====================
 
 /**
@@ -493,6 +553,139 @@ export const chat = async (
   return response.data;
 };
 
+
+
+/**
+ * 上传文件并提问
+ */
+export const uploadFileAndQuery = async (
+  params: FileUploadParams
+): Promise<FileUploadResult> => {
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    throw new Error('用户未登录，请先登录');
+  }
+  
+  // 创建FormData对象
+  const formData = new FormData();
+  formData.append('sessionId', params.sessionId);
+  formData.append('file', params.file);
+  
+  if (params.question && params.question.trim()) {
+    formData.append('question', params.question);
+  }
+  
+  console.log('开始上传文件并提问:', {
+    sessionId: params.sessionId,
+    fileName: params.file.name,
+    fileSize: params.file.size,
+    question: params.question
+  });
+  
+  try {
+    // 使用统一的request实例，但要处理multipart/form-data
+    const response = await request.post('/chat/upload-with-query', formData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // 注意：不设置Content-Type，让浏览器自动设置multipart/form-data
+      }
+    });
+    
+    console.log('文件上传成功:', response);
+    
+    // 确保返回的数据结构正确
+    if (response.data && typeof response.data === 'object') {
+      return {
+        ...response.data,
+        success: response.data.success !== false
+      };
+    }
+    
+    return response.data;
+  } catch (error: any) {
+    console.error('文件上传失败:', error);
+    
+    // 统一错误处理
+    if (error.response) {
+      const status = error.response.status;
+      const message = error.response.data?.message || error.response.statusText;
+      
+      if (status === 401) {
+        throw new Error('认证失败，请重新登录');
+      } else if (status === 400) {
+        throw new Error(`文件上传失败: ${message}`);
+      } else if (status === 413) {
+        throw new Error('文件太大，请上传小于10MB的文件');
+      } else if (status >= 500) {
+        throw new Error('服务器错误，请稍后重试');
+      }
+    }
+    
+    throw error;
+  }
+};
+
+
+/**
+ * 获取支持的文件格式
+ */
+export const getSupportedFormats = async (): Promise<SupportedFormats> => {
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    throw new Error('用户未登录，请先登录');
+  }
+  
+  try {
+    const response = await request.get('/ocr/supported-formats', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error: any) {
+    console.error('获取支持格式失败:', error);
+    
+    // 返回默认支持格式
+    return {
+      image: ['jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff'],
+      pdf: ['pdf'],
+      document: ['doc', 'docx'],
+      maxSize: '10MB',
+      notes: '支持中英文文字识别'
+    };
+  }
+};
+
+/**
+ * 清理OCR缓存
+ */
+export const clearOcrCache = async (): Promise<{ clearedAt: number }> => {
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    throw new Error('用户未登录，请先登录');
+  }
+  
+  try {
+    const response = await request.post('/ocr/cache/clear', {}, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    return response.data;
+  } catch (error: any) {
+    console.error('清理OCR缓存失败:', error);
+    throw error;
+  }
+};
+
 // ==================== 辅助函数 ====================
 
 /**
@@ -545,9 +738,379 @@ export const getActiveSessions = (sessions: SessionItem[]): SessionItem[] => {
   });
 };
 
-// 导出所有类型和函数
+
+/**
+ * 检查文件是否支持
+ */
+export const isFileSupported = (
+  file: File, 
+  supportedFormats: SupportedFormats
+): { supported: boolean; reason?: string } => {
+  // 检查文件大小
+  const maxSizeMB = parseInt(supportedFormats.maxSize) || 10;
+  const maxBytes = maxSizeMB * 1024 * 1024;
+  
+  if (file.size > maxBytes) {
+    return {
+      supported: false,
+      reason: `文件大小超过${maxSizeMB}MB限制`
+    };
+  }
+  
+  // 获取文件扩展名
+  const fileName = file.name.toLowerCase();
+  const extension = fileName.split('.').pop() || '';
+  
+  // 检查是否支持该格式
+  const supportedExtensions = [
+    ...supportedFormats.image,
+    ...supportedFormats.pdf,
+    ...supportedFormats.document
+  ];
+  
+  if (!supportedExtensions.includes(extension)) {
+    return {
+      supported: false,
+      reason: `不支持的文件格式: .${extension}`
+    };
+  }
+  
+  return { supported: true };
+};
+
+/**
+ * 获取文件类型
+ */
+export const getFileType = (file: File): 'image' | 'pdf' | 'document' | 'unknown' => {
+  const fileName = file.name.toLowerCase();
+  const extension = fileName.split('.').pop() || '';
+  
+  if (['jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff'].includes(extension)) {
+    return 'image';
+  }
+  
+  if (extension === 'pdf') {
+    return 'pdf';
+  }
+  
+  if (['doc', 'docx', 'txt', 'md'].includes(extension)) {
+    return 'document';
+  }
+  
+  return 'unknown';
+};
+
+/**
+ * 格式化文件大小
+ */
+export const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+/**
+ * 提取文本中的关键信息（简化版）
+ */
+export const extractKeyInfo = (text: string, maxLength: number = 200): string => {
+  if (!text || text.length <= maxLength) {
+    return text || '';
+  }
+  
+  // 尝试找到段落分隔符
+  const paragraphs = text.split(/[\n\r。.]+/);
+  
+  if (paragraphs.length > 1) {
+    // 取第一个有意义的段落
+    for (let i = 0; i < paragraphs.length; i++) {
+      const paragraph = paragraphs[i].trim();
+      if (paragraph.length > 20 && paragraph.length <= maxLength) {
+        return paragraph + (paragraph.endsWith('。') ? '' : '...');
+      }
+    }
+  }
+  
+  // 否则截断文本
+  return text.substring(0, maxLength) + '...';
+};
+
+/**
+ * 验证上传参数
+ */
+export const validateUploadParams = (params: FileUploadParams): { valid: boolean; error?: string } => {
+  if (!params.sessionId || !params.sessionId.trim()) {
+    return { valid: false, error: '会话ID不能为空' };
+  }
+  
+  if (!params.file) {
+    return { valid: false, error: '请选择文件' };
+  }
+  
+  if (params.question && params.question.trim().length > 500) {
+    return { valid: false, error: '问题不能超过500个字符' };
+  }
+  
+  return { valid: true };
+};
+
+/**
+ * 发送消息到AI并接收流式响应（支持附件）
+ * @param memoryId 会话ID，用于维持对话上下文
+ * @param message 用户消息内容
+ * @param file 可选的文件附件
+ * @param onMessage 消息接收回调函数
+ * @param onError 错误处理回调函数
+ * @param onComplete 完成回调函数
+ * @returns 取消流的函数
+ */
+export const sseChatWithAttachment = async (
+  memoryId: string | number,
+  message: string,
+  file: File | null,
+  onMessage: (chunk: string) => void,
+  onError: (error: Error) => void,
+  onComplete: () => void
+): Promise<() => void> => {
+  console.log("开始SSE请求（带附件），参数:", { memoryId, message, file });
+  // 获取用户token
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    onError(new Error('用户未登录，请先登录'));
+    onComplete();
+    return () => {};
+  }
+  
+  // 用于取消请求的控制器
+  const abortController = new AbortController();
+  const { signal } = abortController;
+
+  try {
+    const formData = new FormData();
+    formData.append('memoryId', String(memoryId));
+    formData.append('message', message);
+    
+    if (file) {
+      formData.append('file', file);
+    }
+    
+    console.log("开始SSE请求（带附件），URL:", '/api/chat/sse');
+    
+    // 发起Fetch请求，接收流式响应
+    const response = await fetch('/api/chat/sse', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      },
+      body: formData,
+      signal: signal
+    });
+    
+    console.log("SSE响应状态:", response.status, response.ok);
+    
+    // 检查请求是否成功
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("SSE错误响应:", errorText);
+      throw new Error(`SSE连接失败 (${response.status}): ${errorText || response.statusText}`);
+    }
+
+    // 获取流读取器
+    const reader = response.body?.getReader();
+    
+    if (!reader) {
+      throw new Error("无法获取响应流读取器");
+    }
+
+    // 文本解码器，用于解析二进制流
+    const textDecoder = new TextDecoder('utf-8');
+    let buffer = '';
+    
+    const readStream = async () => {
+      try {
+        let chunkCount = 0;
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          
+          if (done) {
+            console.log("流读取完成，总共收到", chunkCount, "个chunk");
+            onComplete();
+            break;
+          }
+
+          chunkCount++;
+          
+          // 解码数据并追加到缓冲区
+          const chunkText = textDecoder.decode(value, { stream: true });
+          buffer += chunkText;
+          
+          // 处理完整的SSE事件
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // 保留不完整的行
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            if (line.trim() === '') {
+              continue;
+            }
+
+            if (line.startsWith('data:')) {
+              const dataContent = line.slice(5).trim();
+              
+              if (dataContent) {
+                // 检查是否是特殊标记
+                if (dataContent === '[DONE]' || dataContent === 'DONE' || dataContent === 'done') {
+                  onComplete();
+                  return;
+                }
+                
+                try {
+                  // 尝试解析JSON
+                  const event = JSON.parse(dataContent);
+                  
+                  if (event.type === 'message' && event.data) {
+                    onMessage(event.data);
+                  } else if (event.type === 'complete') {
+                    onComplete();
+                    return;
+                  } else if (event.type === 'error') {
+                    throw new Error(event.message || 'SSE流错误');
+                  } else if (event.data) {
+                    // 如果有data字段，即使type不是message也发送
+                    onMessage(event.data);
+                  }
+                } catch (parseError) {
+                  // 如果不是JSON，直接作为消息内容
+                  const cleanedData = dataContent.replace(/^id:[a-f0-9\-]+/, '').trim();
+                  if (cleanedData) {
+                    onMessage(cleanedData);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch (streamError) {
+        console.error("读取流过程中出错:", streamError);
+        if ((streamError as Error).name !== 'AbortError') {
+          onError(streamError as Error);
+          onComplete();
+        }
+      }
+    };
+
+    console.log("开始读取流数据");
+    readStream();
+    
+    // 返回取消函数
+    return () => {
+      console.log("取消SSE请求");
+      abortController.abort();
+    };
+    
+  } catch (error: any) {
+    console.error("SSE请求失败:", error);
+    onError(error);
+    onComplete();
+    return () => {};
+  }
+};
+
+/**
+ * 上传文件并继续对话（流式）
+ */
+export const uploadFileAndContinueChat = async (
+  sessionId: string,
+  file: File,
+  onProgress?: (progress: number) => void,
+  onTextExtracted?: (text: string) => void
+): Promise<{
+  text: string;
+  success: boolean;
+  error?: string;
+}> => {
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    throw new Error('用户未登录，请先登录');
+  }
+  
+  const formData = new FormData();
+  formData.append('sessionId', sessionId);
+  formData.append('file', file);
+  
+  try {
+    // 如果有进度回调，可以在这里处理（需要后端支持进度事件）
+    if (onProgress) {
+      onProgress(10); // 开始上传
+    }
+    
+    const response = await request.post('/chat/upload-with-query', formData, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      // 如果有进度事件支持
+      onUploadProgress: (progressEvent: any) => {
+        if (onProgress) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(10 + percentCompleted * 0.8); // 上传占80%
+        }
+      }
+    });
+    
+    if (onProgress) {
+      onProgress(95); // 上传完成，开始处理
+    }
+    
+    const result = response.data;
+    
+    if (result.success && result.extractedText) {
+      if (onTextExtracted) {
+        onTextExtracted(result.extractedText);
+      }
+      
+      if (onProgress) {
+        onProgress(100); // 处理完成
+      }
+      
+      return {
+        text: result.extractedText,
+        success: true
+      };
+    } else {
+      return {
+        text: '',
+        success: false,
+        error: result.errorMessage || '文件处理失败'
+      };
+    }
+  } catch (error: any) {
+    console.error('上传文件失败:', error);
+    
+    return {
+      text: '',
+      success: false,
+      error: error.message || '上传失败'
+    };
+  }
+};
 export type {
-  // 可以在这里重新导出需要的类型
+  FileUploadResult,
+  FileUploadParams,
+  OcrResult,
+  SupportedFormats,
+  OcrStatus
 };
 
 export default {
@@ -565,9 +1128,20 @@ export default {
   sseChat,
   chat,
   
+  // 文件上传和OCR
+  uploadFileAndQuery,
+  getSupportedFormats,
+  clearOcrCache,
+  uploadFileAndContinueChat,
+  
   // 辅助函数
   formatSessionMessages,
   isSessionValid,
   getRecentSessions,
-  getActiveSessions
+  getActiveSessions,
+  isFileSupported,
+  getFileType,
+  formatFileSize,
+  extractKeyInfo,
+  validateUploadParams
 };

@@ -156,7 +156,6 @@ const loadFiles = async (page: number, showMessage = false) => {
             console.log("获取文件列表成功:", data) // 调试信息，查看返回数据
             fileList.value = data.content;
             totalElements.value = data.totalElements;
-            
     } catch (error) {
         ElMessage.error('获取文件列表失败：网络异常')
     }

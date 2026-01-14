@@ -77,6 +77,14 @@
               <el-icon><Edit /></el-icon>
             </el-button>
           </div>
+          
+          <!-- 文件选择状态显示 -->
+          <div class="file-status" v-if="selectedFile">
+            <el-tag type="success" closable @close="clearSelectedFile">
+              <el-icon><Document /></el-icon>
+              已选择: {{ selectedFile.name }}
+            </el-tag>
+          </div>
           <el-button class="share-btn" circle @click="shareConversation">
             <el-icon><Share /></el-icon>
           </el-button>
@@ -183,10 +191,22 @@
             <el-button size="small" @click="setThinkingMode('deep')" :disabled="isSending">
               深度思考
             </el-button>
-            <el-button size="small" @click="setThinkingMode('web')" :disabled="isSending">
-              <el-icon><Search /></el-icon>
-              联网搜索
+            <el-button size="small" @click="handleFileUpload" :disabled="isSending">
+              <el-icon><Upload /></el-icon>
+              上传附件
             </el-button>
+            <el-button size="small" @click="handleImageUpload" :disabled="isSending || isUploadingImage" :loading="isUploadingImage">
+              <el-icon><Picture /></el-icon>
+              上传图片
+            </el-button>
+          </div>
+          
+          <!-- 文件选择状态显示 -->
+          <div class="file-status" v-if="selectedFile">
+            <el-tag type="success" closable @close="clearSelectedFile">
+              <el-icon><Document /></el-icon>
+              已选择: {{ selectedFile.name }}
+            </el-tag>
           </div>
           <el-button 
             type="primary" 
@@ -210,9 +230,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   Plus, ChatLineRound, Close, Promotion, DocumentCopy, 
   Refresh, Star, Share, Search, Sunny, Moon, Edit,
-  Loading, ChatLineSquare,Position
+  Loading, ChatLineSquare, Position, Picture, Upload
 } from '@element-plus/icons-vue'
-import { sseChat } from '../../api/ai'
+import { sseChat, sseChatWithAttachment } from '../../api/ai'
 import { 
   getUserSessions, 
   createNewSession, 
@@ -220,6 +240,7 @@ import {
   updateSessionTitle,
   getSessionMessages 
 } from '../../api/ai/index'
+import { ReqUploadAnswerImg } from '../../api/answer'
 import useUserStore from '../../store/modules/user'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
@@ -269,6 +290,8 @@ const isSending = ref(false)
 const isCreatingChat = ref(false)
 const messageContainer = ref<HTMLElement | null>(null)
 const currentCancelStream = ref<(() => void) | null>(null)
+const isUploadingImage = ref(false)
+const selectedFile = ref<File | null>(null)
 
 // 加载状态
 const loadingMessages = ref(false)
@@ -346,6 +369,142 @@ const shareMessage = (message: Message) => {
 
 const shareConversation = () => {
   ElMessage.info('分享对话功能待实现')
+}
+
+// 更新文件选择状态
+const updateFileStatus = () => {
+  // 可以在这里添加文件状态更新的逻辑
+}
+
+// 处理文件上传
+const handleFileUpload = () => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.txt,.md,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.jpg,.jpeg,.png,.bmp,.gif,.tiff'
+  
+  input.onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    
+    // 检查文件类型
+    const allowedExtensions = ['txt', 'md', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip', 'rar', 'jpg', 'jpeg', 'png', 'bmp', 'gif', 'tiff']
+    const fileExtension = file.name.split('.').pop()?.toLowerCase()
+    
+    if (!fileExtension || !allowedExtensions.includes(fileExtension)) {
+      ElMessage.error('请选择支持的文件格式：txt, md, pdf, doc, docx, xls, xlsx, ppt, pptx, zip, rar, jpg, jpeg, png, bmp, gif, tiff')
+      return
+    }
+    
+    // 检查文件大小（限制为10MB）
+    if (file.size > 10 * 1024 * 1024) {
+      ElMessage.error('文件大小不能超过10MB')
+      return
+    }
+    
+    isSending.value = true
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      // TODO: 调用文件上传API
+      // const response = await ReqUploadFile(formData)
+      
+      // if (response && response.data) {
+      //   const fileUrl = response.data
+      //   const fileName = file.name
+      //   const fileMarkdown = `[${fileName}](${fileUrl})`
+      //   
+      //   // 如果当前有输入内容，则在内容后添加文件链接
+      //   if (inputMessage.value.trim()) {
+      //     inputMessage.value += '\n' + fileMarkdown
+      //   } else {
+      //     inputMessage.value = fileMarkdown
+      //   }
+      //   
+      //   ElMessage.success('文件上传成功')
+      // } else {
+      //   ElMessage.error('文件上传失败')
+      // }
+      
+      // 设置选中的文件
+      selectedFile.value = file
+      updateFileStatus()
+      ElMessage.success('文件已选择：' + file.name)
+    } catch (error: any) {
+      console.error('文件上传失败:', error)
+      ElMessage.error('文件上传失败: ' + (error.message || '未知错误'))
+    } finally {
+      isSending.value = false
+    }
+  }
+  
+  input.click()
+}
+
+
+// 处理图片上传
+const handleImageUpload = () => {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*'
+  
+  input.onchange = async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (!file) return
+    
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      ElMessage.error('请选择图片文件')
+      return
+    }
+    
+    // 检查文件大小（限制为5MB）
+    if (file.size > 5 * 1024 * 1024) {
+      ElMessage.error('图片大小不能超过5MB')
+      return
+    }
+    
+    isUploadingImage.value = true
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      
+      const response = await ReqUploadAnswerImg(formData)
+      
+      if (response && response.data) {
+        // 在消息中插入图片链接
+        const imageUrl = response.data
+        const imageMarkdown = `![图片](${imageUrl})`
+        
+        // 如果当前有输入内容，则在内容后添加图片
+        if (inputMessage.value.trim()) {
+          inputMessage.value += '\n' + imageMarkdown
+        } else {
+          inputMessage.value = imageMarkdown
+        }
+        
+        ElMessage.success('图片上传成功')
+      } else {
+        ElMessage.error('图片上传失败')
+      }
+    } catch (error: any) {
+      console.error('图片上传失败:', error)
+      ElMessage.error('图片上传失败: ' + (error.message || '未知错误'))
+    } finally {
+      isUploadingImage.value = false
+    }
+  }
+  
+  input.click()
+}
+
+// 清除选中的文件
+const clearSelectedFile = () => {
+  selectedFile.value = null
+  updateFileStatus()
+  ElMessage.info('已清除文件选择')
 }
 
 const editChatTitle = async () => {
@@ -690,6 +849,7 @@ const sendQuickMessage = (message: string) => {
 
 // 发送消息
 // 发送消息
+// 发送消息
 const sendMessage = async () => {
   console.log("1. 开始发送消息，当前activeChatId:", activeChatId.value)
   
@@ -762,82 +922,161 @@ const sendMessage = async () => {
   scrollToBottom()
   
   try {
-    console.log("6. 开始调用 sseChat API")
+    console.log("6. 开始调用 AI API")
     
-    const cancelStream = await sseChat(
-      String(chatId),
-      messageContent,
-      (chunk) => {
-        console.log("7. 收到流数据chunk:", chunk)
-        console.log("   chunk长度:", chunk.length)
-        console.log("   chunk类型:", typeof chunk)
-        
-        // 获取当前消息列表
-        const currentMessages = messagesMap.value[chatId] || []
-        const aiMessageIndex = currentMessages.findIndex(msg => msg.id === aiMessageId)
-        
-        console.log("   AI消息索引:", aiMessageIndex)
-        console.log("  当前消息数:", currentMessages.length)
-        
-        if (aiMessageIndex !== -1) {
-          // 创建新的消息列表
-          const updatedMessages = [...currentMessages]
-          const oldContent = updatedMessages[aiMessageIndex].content
-          updatedMessages[aiMessageIndex] = {
-            ...updatedMessages[aiMessageIndex],
-            content: oldContent + chunk
+    let cancelStream: (() => void) | null = null
+    
+    // 检查是否有选中的文件
+    if (selectedFile.value) {
+      console.log("6.1 使用带附件的API，文件:", selectedFile.value.name)
+      // 调用带附件的流式聊天接口
+      cancelStream = await sseChatWithAttachment(
+        String(chatId),
+        messageContent,
+        selectedFile.value,
+        (chunk) => {
+          // 清空选中的文件
+          selectedFile.value = null
+          updateFileStatus()
+          console.log("7. 收到流数据chunk:", chunk)
+          console.log("   chunk长度:", chunk.length)
+          console.log("   chunk类型:", typeof chunk)
+          
+          // 获取当前消息列表
+          const currentMessages = messagesMap.value[chatId] || []
+          const aiMessageIndex = currentMessages.findIndex(msg => msg.id === aiMessageId)
+          
+          console.log("   AI消息索引:", aiMessageIndex)
+          console.log("  当前消息数:", currentMessages.length)
+          
+          if (aiMessageIndex !== -1) {
+            // 创建新的消息列表
+            const updatedMessages = [...currentMessages]
+            const oldContent = updatedMessages[aiMessageIndex].content
+            updatedMessages[aiMessageIndex] = {
+              ...updatedMessages[aiMessageIndex],
+              content: oldContent + chunk
+            }
+            
+            console.log("   更新前内容长度:", oldContent.length)
+            console.log("   更新后内容长度:", updatedMessages[aiMessageIndex].content.length)
+            
+            // 更新 messagesMap
+            messagesMap.value = {
+              ...messagesMap.value,
+              [chatId]: updatedMessages
+            }
+            
+            console.log("8. messagesMap 已更新")
+            scrollToBottom()
+          } else {
+            console.error("  错误：未找到AI消息，ID:", aiMessageId)
+          }
+        },
+        (error) => {
+          console.error("9. SSE连接错误:", error)
+          console.error("   错误详情:", error.message)
+          console.error("   错误堆栈:", error.stack)
+          ElMessage.error('AI服务连接错误：' + error.message)
+          isSending.value = false
+          
+          // 移除空的AI消息
+          const currentMessages = messagesMap.value[chatId] || []
+          const aiMessageIndex = currentMessages.findIndex(
+            msg => msg.id === aiMessageId && msg.content === ''
+          )
+          if (aiMessageIndex !== -1) {
+            const updatedMessages = currentMessages.filter((_, index) => index !== aiMessageIndex)
+            messagesMap.value = {
+              ...messagesMap.value,
+              [chatId]: updatedMessages
+            }
+          }
+        },
+        () => {
+          console.log("10. SSE连接完成")
+          isSending.value = false
+          currentCancelStream.value = null
+          
+          // 更新对话标题（如果是新对话的第一条消息）
+          const currentChat = chatList.value.find(chat => chat.id === chatId)
+          if (currentChat && currentChat.title === '新对话') {
+            const newTitle = messageContent.slice(0, 20) + (messageContent.length > 20 ? '...' : '')
+            updateChatTitle(chatId, newTitle)
           }
           
-          console.log("   更新前内容长度:", oldContent.length)
-          console.log("   更新后内容长度:", updatedMessages[aiMessageIndex].content.length)
+          nextTick(() => setupCopyButtons())
+        }
+      )
+    } else {
+      console.log("6.2 使用普通API")
+      // 调用普通流式聊天接口
+      cancelStream = await sseChat(
+        String(chatId),
+        messageContent,
+        (chunk) => {
+          console.log("7. 收到流数据chunk:", chunk)
+          console.log("   chunk长度:", chunk.length)
+          console.log("   chunk类型:", typeof chunk)
           
-          // 更新 messagesMap
-          messagesMap.value = {
-            ...messagesMap.value,
-            [chatId]: updatedMessages
+          // 获取当前消息列表
+          const currentMessages = messagesMap.value[chatId] || []
+          const aiMessageIndex = currentMessages.findIndex(msg => msg.id === aiMessageId)
+          
+          if (aiMessageIndex !== -1) {
+            // 创建新的消息列表
+            const updatedMessages = [...currentMessages]
+            const oldContent = updatedMessages[aiMessageIndex].content
+            updatedMessages[aiMessageIndex] = {
+              ...updatedMessages[aiMessageIndex],
+              content: oldContent + chunk
+            }
+            
+            // 更新 messagesMap
+            messagesMap.value = {
+              ...messagesMap.value,
+              [chatId]: updatedMessages
+            }
+            
+            scrollToBottom()
+          } else {
+            console.error("  错误：未找到AI消息，ID:", aiMessageId)
+          }
+        },
+        (error) => {
+          console.error("9. SSE连接错误:", error)
+          ElMessage.error('AI服务连接错误：' + error.message)
+          isSending.value = false
+          
+          // 移除空的AI消息
+          const currentMessages = messagesMap.value[chatId] || []
+          const aiMessageIndex = currentMessages.findIndex(
+            msg => msg.id === aiMessageId && msg.content === ''
+          )
+          if (aiMessageIndex !== -1) {
+            const updatedMessages = currentMessages.filter((_, index) => index !== aiMessageIndex)
+            messagesMap.value = {
+              ...messagesMap.value,
+              [chatId]: updatedMessages
+            }
+          }
+        },
+        () => {
+          console.log("10. SSE连接完成")
+          isSending.value = false
+          currentCancelStream.value = null
+          
+          // 更新对话标题（如果是新对话的第一条消息）
+          const currentChat = chatList.value.find(chat => chat.id === chatId)
+          if (currentChat && currentChat.title === '新对话') {
+            const newTitle = messageContent.slice(0, 20) + (messageContent.length > 20 ? '...' : '')
+            updateChatTitle(chatId, newTitle)
           }
           
-          console.log("8. messagesMap 已更新")
-          scrollToBottom()
-        } else {
-          console.error("  错误：未找到AI消息，ID:", aiMessageId)
+          nextTick(() => setupCopyButtons())
         }
-      },
-      (error) => {
-        console.error("9. SSE连接错误:", error)
-        console.error("   错误详情:", error.message)
-        console.error("   错误堆栈:", error.stack)
-        ElMessage.error('AI服务连接错误：' + error.message)
-        isSending.value = false
-        
-        // 移除空的AI消息
-        const currentMessages = messagesMap.value[chatId] || []
-        const aiMessageIndex = currentMessages.findIndex(
-          msg => msg.id === aiMessageId && msg.content === ''
-        )
-        if (aiMessageIndex !== -1) {
-          const updatedMessages = currentMessages.filter((_, index) => index !== aiMessageIndex)
-          messagesMap.value = {
-            ...messagesMap.value,
-            [chatId]: updatedMessages
-          }
-        }
-      },
-      () => {
-        console.log("10. SSE连接完成")
-        isSending.value = false
-        currentCancelStream.value = null
-        
-        // 更新对话标题（如果是新对话的第一条消息）
-        const currentChat = chatList.value.find(chat => chat.id === chatId)
-        if (currentChat && currentChat.title === '新对话') {
-          const newTitle = messageContent.slice(0, 20) + (messageContent.length > 20 ? '...' : '')
-          updateChatTitle(chatId, newTitle)
-        }
-        
-        nextTick(() => setupCopyButtons())
-      }
-    )
+      )
+    }
     
     console.log("11. sseChat 调用成功，返回取消函数")
     currentCancelStream.value = cancelStream
@@ -866,6 +1105,7 @@ const sendMessage = async () => {
     }
   }
 }
+
 // 滚动到消息底部
 const scrollToBottom = () => {
   nextTick(() => {
