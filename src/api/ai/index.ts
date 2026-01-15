@@ -344,58 +344,56 @@ export const sseChat = async (
     return () => {};
   }
   
-  // 构建查询参数
-  const params = new URLSearchParams({
-    memoryId: String(memoryId),
-    message: message
-  });
+  // 🔥 核心修改1：创建FormData，封装所有参数（不再用URL拼接）
+  const formData = new FormData();
+  formData.append('message', message); // 必选参数
+  if (memoryId) {
+    formData.append('memoryId', String(memoryId)); // 可选参数
+  }
 
   // 用于取消请求的控制器
   const abortController = new AbortController();
   const { signal } = abortController;
 
   try {
-    console.log("开始SSE请求，URL:", `/api/chat/sse?${params.toString()}`);
+    console.log("开始SSE请求，URL:", `/api/chat/sse`);
     
     // 发起Fetch请求，接收流式响应
-    const response = await fetch(`/api/chat/sse?${params.toString()}`, {
-      method: 'GET',
+    const response = await fetch(`/api/chat/sse`, {
+      method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Accept': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive'
+        // 🔥 核心修改2：不手动设置Content-Type，让浏览器自动生成multipart/form-data
       },
+      body: formData, // 🔥 核心修改3：传递FormData，而非空
       signal: signal
     });
     
+    // 以下原有逻辑完全不变
     console.log("SSE响应状态:", response.status, response.ok);
     console.log("SSE响应头:", Object.fromEntries(response.headers.entries()));
     
-    // 检查请求是否成功
     if (!response.ok) {
       const errorText = await response.text();
       console.error("SSE错误响应:", errorText);
       throw new Error(`SSE连接失败 (${response.status}): ${errorText || response.statusText}`);
     }
 
-    // 检查响应类型
     const contentType = response.headers.get('content-type');
     console.log("响应Content-Type:", contentType);
     
     if (!contentType || !contentType.includes('text/event-stream')) {
       console.warn("警告：响应不是SSE流，Content-Type:", contentType);
-      // 不抛出错误，尝试继续处理
     }
 
-    // 获取流读取器
     const reader = response.body?.getReader();
-    
     if (!reader) {
       throw new Error("无法获取响应流读取器");
     }
 
-    // 文本解码器，用于解析二进制流
     const textDecoder = new TextDecoder('utf-8');
     let buffer = '';
     
@@ -413,80 +411,66 @@ export const sseChat = async (
           }
 
           chunkCount++;
-          
-          // 解码数据并追加到缓冲区
           const chunkText = textDecoder.decode(value, { stream: true });
           console.log(`chunk ${chunkCount} 原始数据:`, JSON.stringify(chunkText));
           console.log(`chunk ${chunkCount} 长度:`, chunkText.length);
           
           buffer += chunkText;
-          
-          // 处理完整的SSE事件
           const lines = buffer.split('\n');
-          buffer = lines.pop() || ''; // 保留不完整的行
+          buffer = lines.pop() || '';
 
           console.log(`chunk ${chunkCount} 分割为 ${lines.length} 行，buffer剩余: ${buffer.length}`);
           
-       for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          console.log(`行 ${i}: ${JSON.stringify(line)}`);
-          
-          if (line.trim() === '') {
-            console.log(`行 ${i}: 空行，跳过`);
-            continue;
-          }
-
-          if (line.startsWith('data:')) {
-            const dataContent = line.slice(5).trim();
-            console.log(`行 ${i}: 找到data，内容: ${JSON.stringify(dataContent)}`);
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            console.log(`行 ${i}: ${JSON.stringify(line)}`);
             
-            if (dataContent) {
-              // 检查是否是特殊标记
-              if (dataContent === '[DONE]' || dataContent === 'DONE' || dataContent === 'done') {
-                console.log(`行 ${i}: 收到完成标记`);
-                onComplete();
-                return;
-              }
+            if (line.trim() === '') {
+              console.log(`行 ${i}: 空行，跳过`);
+              continue;
+            }
+
+            if (line.startsWith('data:')) {
+              const dataContent = line.slice(5).trim();
+              console.log(`行 ${i}: 找到data，内容: ${JSON.stringify(dataContent)}`);
               
-              try {
-                // 尝试解析JSON
-                const event = JSON.parse(dataContent);
-                console.log(`行 ${i}: 解析为JSON:`, event);
-                
-                if (event.type === 'message' && event.data) {
-                  onMessage(event.data);
-                } else if (event.type === 'complete') {
+              if (dataContent) {
+                if (dataContent === '[DONE]' || dataContent === 'DONE' || dataContent === 'done') {
+                  console.log(`行 ${i}: 收到完成标记`);
                   onComplete();
                   return;
-                } else if (event.type === 'error') {
-                  throw new Error(event.message || 'SSE流错误');
-                } else if (event.data) {
-                  // 如果有data字段，即使type不是message也发送
-                  onMessage(event.data);
                 }
-              } catch (parseError) {
-                // 如果不是JSON，直接作为消息内容
-                console.log(`行 ${i}: 不是JSON，直接作为消息:`, dataContent);
                 
-                // 过滤掉消息ID - 添加这行
-                const cleanedData = dataContent.replace(/^id:[a-f0-9\-]+/, '').trim();
-                if (cleanedData) {
-                  onMessage(cleanedData);
+                try {
+                  const event = JSON.parse(dataContent);
+                  console.log(`行 ${i}: 解析为JSON:`, event);
+                  
+                  if (event.type === 'message' && event.data) {
+                    onMessage(event.data);
+                  } else if (event.type === 'complete') {
+                    onComplete();
+                    return;
+                  } else if (event.type === 'error') {
+                    throw new Error(event.message || 'SSE流错误');
+                  } else if (event.data) {
+                    onMessage(event.data);
+                  }
+                } catch (parseError) {
+                  const cleanedData = dataContent.replace(/^id:[a-f0-9\-]+/, '').trim();
+                  if (cleanedData) {
+                    onMessage(cleanedData);
+                  }
                 }
               }
-            }
-          } else if (line.startsWith('event:')) {
-            // ... 其他代码不变
-          } else {
-            console.log(`行 ${i}: 未知格式，直接作为消息:`, line);
-            
-            // 过滤掉消息ID - 添加这行
-            const cleanedLine = line.replace(/^id:[a-f0-9\-]+/, '').trim();
-            if (cleanedLine) {
-              onMessage(cleanedLine);
+            } else if (line.startsWith('event:')) {
+              // 原有逻辑不变
+            } else {
+              const cleanedLine = line.replace(/^id:[a-f0-9\-]+/, '').trim();
+              if (cleanedLine) {
+                onMessage(cleanedLine);
+              }
             }
           }
-        }
         }
       } catch (streamError) {
         console.error("读取流过程中出错:", streamError);
@@ -498,7 +482,6 @@ export const sseChat = async (
     };
 
     console.log("开始读取流数据");
-    // 开始读取流
     readStream().catch(error => {
       console.error("readStream promise 拒绝:", error);
       if ((error as Error).name !== 'AbortError') {
@@ -509,19 +492,19 @@ export const sseChat = async (
 
   } catch (error) {
     console.error("SSE请求捕获错误:", error);
-    // 排除主动取消的错误
     if ((error as Error).name !== 'AbortError') {
       onError(error as Error);
       onComplete();
     }
   }
 
-  // 返回取消流式请求的函数
   return () => {
     console.log("取消SSE请求");
     abortController.abort();
   };
 };
+
+
 
 /**
  * 非流式聊天（备用方案）
@@ -554,78 +537,6 @@ export const chat = async (
 };
 
 
-
-/**
- * 上传文件并提问
- */
-export const uploadFileAndQuery = async (
-  params: FileUploadParams
-): Promise<FileUploadResult> => {
-  const UserStore = useUserStore();
-  const token = UserStore.token;
-  
-  if (!token) {
-    throw new Error('用户未登录，请先登录');
-  }
-  
-  // 创建FormData对象
-  const formData = new FormData();
-  formData.append('sessionId', params.sessionId);
-  formData.append('file', params.file);
-  
-  if (params.question && params.question.trim()) {
-    formData.append('question', params.question);
-  }
-  
-  console.log('开始上传文件并提问:', {
-    sessionId: params.sessionId,
-    fileName: params.file.name,
-    fileSize: params.file.size,
-    question: params.question
-  });
-  
-  try {
-    // 使用统一的request实例，但要处理multipart/form-data
-    const response = await request.post('/chat/upload-with-query', formData, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        // 注意：不设置Content-Type，让浏览器自动设置multipart/form-data
-      }
-    });
-    
-    console.log('文件上传成功:', response);
-    
-    // 确保返回的数据结构正确
-    if (response.data && typeof response.data === 'object') {
-      return {
-        ...response.data,
-        success: response.data.success !== false
-      };
-    }
-    
-    return response.data;
-  } catch (error: any) {
-    console.error('文件上传失败:', error);
-    
-    // 统一错误处理
-    if (error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.message || error.response.statusText;
-      
-      if (status === 401) {
-        throw new Error('认证失败，请重新登录');
-      } else if (status === 400) {
-        throw new Error(`文件上传失败: ${message}`);
-      } else if (status === 413) {
-        throw new Error('文件太大，请上传小于10MB的文件');
-      } else if (status >= 500) {
-        throw new Error('服务器错误，请稍后重试');
-      }
-    }
-    
-    throw error;
-  }
-};
 
 
 /**

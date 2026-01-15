@@ -105,7 +105,8 @@ import {
     ReqGetCategories, 
     ReqGetFileList, 
     ReqSearchFiles, 
-    ReqGetFileDetail 
+    ReqGetFileDetail,
+    ReqDownloadFile 
 } from '../../api/files'
 
 // 响应式数据
@@ -200,8 +201,6 @@ const showFileDetail = async (file: any) => {
 // 下载文件
 const downloadFile = async (file: any) => {
     try {
-        // 这里需要实现文件下载逻辑
-        // 由于下载是文件流，需要特殊处理
         ElMessageBox.confirm(
             `确定要下载文件 "${file.fileName}" 吗？`,
             '下载确认',
@@ -211,9 +210,41 @@ const downloadFile = async (file: any) => {
                 type: 'warning'
             }
         ).then(async () => {
-            // 实际下载逻辑需要根据后端API实现
-            // 这里先模拟下载成功
-            ElMessage.success('开始下载文件：' + file.fileName)
+            // 显示下载中提示
+            const loading = ElMessage({
+                message: '正在下载文件...',
+                type: 'info',
+                duration: 0
+            })
+            
+            try {
+                // 调用下载API
+                const response = await ReqDownloadFile(file.id || file.fileId)
+                
+                // 创建Blob对象并下载
+                const blob = new Blob([response.data])
+                const url = window.URL.createObjectURL(blob)
+                const link = document.createElement('a')
+                link.href = url
+                link.download = file.fileName
+                document.body.appendChild(link)
+                link.click()
+                
+                // 清理资源
+                window.URL.revokeObjectURL(url)
+                document.body.removeChild(link)
+                
+                // 关闭加载提示并显示成功消息
+                loading.close()
+                ElMessage.success('文件下载成功')
+                
+                // 刷新文件列表以更新下载次数
+                loadFiles(currentPage.value)
+                
+            } catch (error) {
+                loading.close()
+                ElMessage.error('下载失败：' + (error.response?.data?.message || '网络异常'))
+            }
         }).catch(() => {
             // 用户取消下载
         })

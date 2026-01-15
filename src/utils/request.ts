@@ -59,9 +59,24 @@ request.interceptors.request.use((config) => {
 
 // 响应拦截器
 request.interceptors.response.use(
-  (response: AxiosResponse<ApiResponse>): any => {
-    const apiResponse = response.data;
-      console.log("有回包：",apiResponse);
+  (response: AxiosResponse): any => {
+    // 1. 先判断是否为文件下载请求
+    const isDownloadRequest = 
+      // 方式1：通过响应类型判断（推荐）
+      response.headers['content-type']?.includes('application/octet-stream') ||
+      // 方式2：通过响应头判断是否有Content-Disposition
+      response.headers['content-disposition']?.includes('attachment') ||
+      // 方式3：通过请求URL包含download关键词判断
+      response.config.url?.includes('/download/');
+    
+    // 2. 如果是文件下载接口，直接返回完整响应（不解析JSON）
+    if (isDownloadRequest) {
+      console.log("文件下载响应，跳过拦截器解析");
+      return response; // 返回完整的response对象
+    }
+   // 3. 如果不是下载请求，才当作JSON API响应处理
+   const apiResponse = response.data;
+    
     // 使用类型守卫检查响应是否成功
     if (isSuccessResponse(apiResponse)) {
       return apiResponse.data;
@@ -129,7 +144,6 @@ request.interceptors.response.use(
     (error as any).response = apiResponse;
     return Promise.reject(error);
   },
-  
   // HTTP错误处理（网络错误或HTTP状态码错误）
   (error) => {
     let message = '网络错误，请稍后重试';

@@ -188,16 +188,9 @@
             :disabled="isSending"
           />
           <div class="input-actions">
-            <el-button size="small" @click="setThinkingMode('deep')" :disabled="isSending">
-              深度思考
-            </el-button>
             <el-button size="small" @click="handleFileUpload" :disabled="isSending">
               <el-icon><Upload /></el-icon>
               上传附件
-            </el-button>
-            <el-button size="small" @click="handleImageUpload" :disabled="isSending || isUploadingImage" :loading="isUploadingImage">
-              <el-icon><Picture /></el-icon>
-              上传图片
             </el-button>
           </div>
           
