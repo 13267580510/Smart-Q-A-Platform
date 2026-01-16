@@ -65,6 +65,12 @@
           </el-icon>
           <span>通知管理</span>
      </el-menu-item>
+     <el-menu-item index="/admin/fileManage/file">
+          <el-icon>
+               <Document />
+          </el-icon>
+          <span>文件管理</span>
+     </el-menu-item>
 </template>
 
 <script setup lang="ts">

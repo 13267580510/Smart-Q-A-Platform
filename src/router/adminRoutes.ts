@@ -127,6 +127,20 @@ const adminRoutes = [
             }
         ]
 
+    },
+    {
+        path: '/admin/fileManage',
+        component: () => import('../view/admin/layout/index.vue'),
+        children: [
+            {
+                path: '/admin/fileManage/file',
+                component: () => import('../view/admin/fileManage/file.vue'),
+                meta: {
+                    title: '文件管理',
+                    icon: 'Document'
+                },
+            }
+        ]
     }
 ]
 

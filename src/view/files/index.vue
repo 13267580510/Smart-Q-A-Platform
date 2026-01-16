@@ -106,7 +106,7 @@ import {
     ReqGetFileList, 
     ReqSearchFiles, 
     ReqGetFileDetail,
-    ReqDownloadFile 
+    ReqDownloadFileStream
 } from '../../api/files'
 
 // 响应式数据
@@ -120,6 +120,10 @@ const totalElements = ref(0)
 const detailVisible = ref(false)
 const currentFile = ref(null)
 
+// 下载相关的状态
+const downloadingFiles = ref(new Set<number>()) // 正在下载的文件ID集合
+const downloadProgress = ref<Record<number, number>>({}) // 下载进度
+
 // 生命周期
 onMounted(() => {
     loadCategories()
@@ -132,7 +136,7 @@ const loadCategories = async () => {
         const data = await ReqGetCategories()
         categories.value = data;
         selectedCategory.value = 'all'
-        console.log("分类加载成功:", selectedCategory.value) // 调试信息，查看分类
+        console.log("分类加载成功:", selectedCategory.value)
     } catch (error) {
         ElMessage.error('获取分类失败：网络异常')
     }
@@ -145,19 +149,28 @@ const loadFiles = async (page: number, showMessage = false) => {
             page: page - 1,
             size: pageSize.value
         }
-        console.log("selectedCategory.value 的值是",selectedCategory.value)
-        if (!selectedCategory.value) { // 匹配：null/undefined/''/0/false/NaN 等假值
-                console.log("selectedCategory.value 为空，赋值为 all");
-                selectedCategory.value = 'all';
-            }
-         params.category = selectedCategory.value
-        
-        console.log("准备获取文件列表，参数为:",params)
+        console.log("selectedCategory.value:", selectedCategory.value)
+        if (!selectedCategory.value) {
+            console.log("selectedCategory.value 为空，赋值为 all")
+            selectedCategory.value = 'all'
+            params.category = selectedCategory.value
+        }else{
+            params.category = selectedCategory.value
+        }        
+        console.log("准备获取文件列表，参数为:", params)
         const data = await ReqGetFileList(params)
-            console.log("获取文件列表成功:", data) // 调试信息，查看返回数据
-            fileList.value = data.content;
-            totalElements.value = data.totalElements;
+        console.log("获取文件列表成功:", data)
+        
+        if (data && data.content) {
+            fileList.value = data.content
+            totalElements.value = data.totalElements
+        } else {
+            fileList.value = []
+            totalElements.value = 0
+        }
+        
     } catch (error) {
+        console.error('加载文件列表失败:', error)
         ElMessage.error('获取文件列表失败：网络异常')
     }
 }
@@ -171,14 +184,22 @@ const handleSearch = async () => {
     
     try {
         const response = await ReqSearchFiles(searchKeyword.value.trim())
-        if (response.data.success) {
-            fileList.value = response.data.data
-            totalElements.value = response.data.data.length
+        // 注意：根据你的API返回结构调整
+        if (Array.isArray(response)) {
+            fileList.value = response
+            totalElements.value = response.length
+            ElMessage.success('搜索成功')
+        } else if (response?.data) {
+            fileList.value = response.data
+            totalElements.value = response.data.length
             ElMessage.success('搜索成功')
         } else {
-            ElMessage.error('搜索失败：' + response.data.message)
+            fileList.value = []
+            totalElements.value = 0
+            ElMessage.success('搜索完成，未找到相关文件')
         }
     } catch (error) {
+        console.error('搜索失败:', error)
         ElMessage.error('搜索失败：网络异常')
     }
 }
@@ -187,21 +208,27 @@ const handleSearch = async () => {
 const showFileDetail = async (file: any) => {
     try {
         const response = await ReqGetFileDetail(file.fileKey)
-        if (response.data.success) {
-            currentFile.value = response.data.data
-            detailVisible.value = true
-        } else {
-            ElMessage.error('获取文件详情失败：' + response.data.message)
-        }
+        // 根据你的API返回结构调整
+        currentFile.value = response.data || response
+        detailVisible.value = true
     } catch (error) {
+        console.error('获取文件详情失败:', error)
         ElMessage.error('获取文件详情失败：网络异常')
     }
 }
 
-// 下载文件
+// 下载文件 - 修改后的版本
 const downloadFile = async (file: any) => {
     try {
-        ElMessageBox.confirm(
+        // 检查文件是否正在下载中
+        const fileId = file.id || file.fileId || file.fileKey
+        if (downloadingFiles.value.has(fileId)) {
+            ElMessage.info('文件正在下载中，请稍候...')
+            return
+        }
+        
+        // 确认下载对话框
+        const confirm = await ElMessageBox.confirm(
             `确定要下载文件 "${file.fileName}" 吗？`,
             '下载确认',
             {
@@ -209,47 +236,73 @@ const downloadFile = async (file: any) => {
                 cancelButtonText: '取消',
                 type: 'warning'
             }
-        ).then(async () => {
-            // 显示下载中提示
-            const loading = ElMessage({
-                message: '正在下载文件...',
-                type: 'info',
-                duration: 0
-            })
-            
-            try {
-                // 调用下载API
-                const response = await ReqDownloadFile(file.id || file.fileId)
-                
-                // 创建Blob对象并下载
-                const blob = new Blob([response.data])
-                const url = window.URL.createObjectURL(blob)
-                const link = document.createElement('a')
-                link.href = url
-                link.download = file.fileName
-                document.body.appendChild(link)
-                link.click()
-                
-                // 清理资源
-                window.URL.revokeObjectURL(url)
-                document.body.removeChild(link)
-                
-                // 关闭加载提示并显示成功消息
-                loading.close()
-                ElMessage.success('文件下载成功')
-                
-                // 刷新文件列表以更新下载次数
-                loadFiles(currentPage.value)
-                
-            } catch (error) {
-                loading.close()
-                ElMessage.error('下载失败：' + (error.response?.data?.message || '网络异常'))
-            }
-        }).catch(() => {
+        ).catch(() => {
             // 用户取消下载
+            return false
         })
+        
+        if (!confirm) return
+        
+        // 添加到下载中集合
+        downloadingFiles.value.add(fileId)
+        
+        // 显示下载中提示
+        const loadingMessage = ElMessage({
+            message: `正在下载文件 "${file.fileName}"...`,
+            type: 'info',
+            duration: 0,
+            showClose: false
+        })
+        
+        try {
+            // 根据文件大小选择下载方式（可选）
+            // const fileSize = file.fileSize || 0
+            await ReqDownloadFileStream(fileId, file.fileName)
+
+
+            
+            // const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024 // 100MB
+            // if (fileSize >= LARGE_FILE_THRESHOLD) {
+            //     // 大文件使用分片下载
+            //     await ReqDownloadFileInChunks(fileId, file.fileName,fileSize)
+            // } else {
+            //     // 小文件使用普通下载
+            //     await ReqDownloadFile(fileId, file.fileName)
+            // }
+            
+            // 下载成功，更新下载次数
+            if (file.downloadCount !== undefined) {
+                file.downloadCount += 1
+            }
+            
+            // 关闭加载提示
+            loadingMessage.close()
+            
+            // 从下载中集合移除
+            downloadingFiles.value.delete(fileId)
+            delete downloadProgress.value[fileId]
+            
+        } catch (error) {
+            // 关闭加载提示
+            loadingMessage.close()
+            
+            // 从下载中集合移除
+            downloadingFiles.value.delete(fileId)
+            delete downloadProgress.value[fileId]
+            
+            // 注意：错误已经在ReqDownloadFile中处理并显示，这里不需要重复显示
+            // 但如果需要特殊处理，可以在这里添加
+            console.error('下载过程出错:', error)
+            
+            // 如果文件有下载次数，可以恢复
+            if (file.downloadCount !== undefined) {
+                file.downloadCount = Math.max(0, file.downloadCount - 1)
+            }
+        }
+        
     } catch (error) {
-        ElMessage.error('下载文件失败：网络异常')
+        console.error('下载对话框出错:', error)
+        ElMessage.error('下载流程出错，请重试')
     }
 }
 
@@ -262,6 +315,7 @@ const handleCategoryChange = () => {
 // 分页处理
 const handleSizeChange = (size: number) => {
     pageSize.value = size
+    currentPage.value = 1
     loadFiles(1)
 }
 
@@ -272,7 +326,7 @@ const handleCurrentChange = (page: number) => {
 
 // 工具函数
 const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 B'
+    if (bytes === 0 || !bytes) return '0 B'
     const k = 1024
     const sizes = ['B', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
@@ -280,8 +334,22 @@ const formatFileSize = (bytes: number): string => {
 }
 
 const formatTime = (timeString: string): string => {
-    return timeString // 这里可以添加时间格式化逻辑
+    if (!timeString) return ''
+    try {
+        const date = new Date(timeString)
+        return date.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        })
+    } catch (e) {
+        return timeString
+    }
 }
+
 </script>
 
 <style scoped>
@@ -308,5 +376,11 @@ const formatTime = (timeString: string): string => {
 .file-type {
     font-weight: bold;
     color: #909399;
+}
+
+/* 可选：添加下载中的样式 */
+.downloading {
+    opacity: 0.6;
+    pointer-events: none;
 }
 </style>
