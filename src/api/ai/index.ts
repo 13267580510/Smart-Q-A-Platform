@@ -768,6 +768,77 @@ export const validateUploadParams = (params: FileUploadParams): { valid: boolean
   return { valid: true };
 };
 
+
+export const uploadFileAndQuery = async (
+  params: FileUploadParams
+): Promise<FileUploadResult> => {
+  const UserStore = useUserStore();
+  const token = UserStore.token;
+  
+  if (!token) {
+    throw new Error('用户未登录，请先登录');
+  }
+  
+  // 创建FormData对象
+  const formData = new FormData();
+  formData.append('sessionId', params.sessionId);
+  formData.append('file', params.file);
+  
+  if (params.question && params.question.trim()) {
+    formData.append('question', params.question);
+  }
+  
+  console.log('开始上传文件并提问:', {
+    sessionId: params.sessionId,
+    fileName: params.file.name,
+    fileSize: params.file.size,
+    question: params.question
+  });
+  
+  try {
+    // 使用统一的request实例，但要处理multipart/form-data
+    const response = await request.post('/chat/upload-with-query', formData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // 注意：不设置Content-Type，让浏览器自动设置multipart/form-data
+      }
+    });
+    
+    console.log('文件上传成功:', response);
+    
+    // 确保返回的数据结构正确
+    if (response.data && typeof response.data === 'object') {
+      return {
+        ...response.data,
+        success: response.data.success !== false
+      };
+    }
+    
+    return response.data;
+  } catch (error: any) {
+    console.error('文件上传失败:', error);
+    
+    // 统一错误处理
+    if (error.response) {
+      const status = error.response.status;
+      const message = error.response.data?.message || error.response.statusText;
+      
+      if (status === 401) {
+        throw new Error('认证失败，请重新登录');
+      } else if (status === 400) {
+        throw new Error(`文件上传失败: ${message}`);
+      } else if (status === 413) {
+        throw new Error('文件太大，请上传小于10MB的文件');
+      } else if (status >= 500) {
+        throw new Error('服务器错误，请稍后重试');
+      }
+    }
+    
+    throw error;
+  }
+};
+
+
 /**
  * 发送消息到AI并接收流式响应（支持附件）
  * @param memoryId 会话ID，用于维持对话上下文
