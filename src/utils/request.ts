@@ -37,10 +37,7 @@ export const isSuccessResponse = <T = any>(response: ApiResponse<T>): response i
 // 创建Axios实例
 const request = axios.create({
   baseURL: '/api',
-  timeout: 5000,
-  headers: {
-    'Content-Type': 'application/json;charset=UTF-8'
-  }
+  timeout: 60000,
 });
 
 // 请求拦截器

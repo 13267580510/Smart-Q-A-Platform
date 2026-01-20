@@ -2,18 +2,37 @@ import { ElMessage } from 'element-plus';
 import request from '../../utils/request';
 import useUserStore from '@/store/modules/user';
 import streamSaver from 'streamsaver'; // 新增
-import {fileCheckRequest} from '@/model/file/fileCheckRequest'; // 新增
-import {fileCheckResult} from '@/model/file/FileCheckResult'; // 新增
+import {FileCheckRequest} from '@/model/file/fileCheckRequest'; // 新增
+import {FileCheckResult} from '@/model/file/fileCheckResult'; // 新增
+import { FileInfo } from '@/model/file/fileInfo';
+import {CheckUploadRequest}  from '@/model/file/chunkUploadRequest'
+import { ChunkUploadResult } from '@/model/file/chunkUploadResult';
+import { calculateChunkHash } from '@/utils/computeMD5'; // 新增
+import { ref } from 'vue'
 
-// 获取所有分类
 export const ReqGetCategories = () => {
-    return request({
-        url: '/files/categories',
-        method: 'get'
-    });
+    return request.get(API.GETCATEGORIES_URL)
 };
+
+// 新增：定义上传进度的响应式状态
+export const uploadProgress = ref<number>(0) // 进度值 0-100
+export const uploadTotalChunks = ref<number>(0) // 总分片数
+export const uploadCurrentChunk = ref<number>(0) // 当前上传到第几个分片
+// 重置上传进度（每次开始新上传前调用）
+export const resetUploadProgress = () => {
+    uploadProgress.value = 0
+    uploadTotalChunks.value = 0
+    uploadCurrentChunk.value = 0
+  }
+  
 enum API{
-    CHECKFILE_URL = '/UserInfo/notifications'
+    SEARCHFILE_URL='/files/search',
+    GETFILELIST_URL='/files/list',
+    DELETEFILE_URL='/files/admin/delete',
+    GETCATEGORIES_URL='/files/categories',
+    CHECKFILE_URL = '/files/admin/check',
+    UPLOADCHUNK_URL='/files/admin/upload-chunk',
+    MERGECHUNK_URL='/files/admin/merge',
 }
 // 获取文件列表（分页 + 筛选）
 export const ReqGetFileList = (params: {
@@ -23,20 +42,12 @@ export const ReqGetFileList = (params: {
     sort?: string;
     order?: string;
 }) => {
-    return request({
-        url: '/files/list',
-        method: 'get',
-        params
-    });
+    return request.get(API.GETFILELIST_URL, { params });
 };
 
 // 搜索文件
 export const ReqSearchFiles = (keyword: string) => {
-    return request({
-        url: '/files/search',
-        method: 'get',
-        params: { keyword }
-    });
+    return request.get(API.SEARCHFILE_URL, { params: { keyword } });
 };
 
 // 获取文件详情
@@ -163,44 +174,153 @@ const extractFileNameFromContentDisposition = (contentDisposition: string): stri
     }
 };
 
-// 获取文件大小信息（需要后端提供这个接口）
-export const ReqGetFileSize = (fileId: number) => {
-    return request({
-        url: `/files/info/${fileId}`,
-        method: 'get'
-    });
-};
 
-// 可选：如果需要显示下载进度，可以使用这个版本
-export const ReqDownloadFileWithProgress = async (fileId: number, fileName: string) => {
-    
-    try {
-        // 先获取文件信息（用于显示文件大小）
-        const fileInfo = await ReqGetFileSize(fileId);
-        const fileSize = fileInfo.size || fileInfo.fileSize;
-        
-        if (fileSize) {
-            const sizeInMB = (fileSize / (1024 * 1024)).toFixed(2);
-            ElMessage.info(`开始下载 ${fileName} (${sizeInMB} MB)...`);
-        } else {
-            ElMessage.info(`开始下载 ${fileName}...`);
-        }
-        
-        // 然后调用下载
-        await ReqDownloadFile(fileId, fileName);
-        
-    } catch (error) {
-        console.error('带进度显示的下载失败:', error);
-        throw error;
+export const ReqUploadFile = async (formData:FileInfo) => {
+    const fileCheckRequest = {
+        fileName: formData.fileName, // 文件名
+        fileSize: formData.fileSize, // 文件大小（字节）
+        category: formData.category, // 文件类型
+        md5: formData.md5, // 文件MD5值
+        userId: formData.userId, // 用户ID
+        clientIp: formData.clientIp // 客户端IP地址
     }
-};
+    return   checkFile(fileCheckRequest)
+}
+
+
+export const ReqUploadChunk=async (result:FileCheckResult,selectedFile:File)=>{
+    resetUploadProgress()
+    const chunkSize:number = result.chunkSize || 100* 1024 * 1024; // 切片大小，默认10MB
+     //读取文件转为切片并从已经上传了的切片后开始上传
+     const uploadedChunks = result?.uploadedChunks; // 已上传的切片索引数组
+     const totalChunk = result?.totalChunks; //总切片数
+     const notUploadedChunks = [];
+     const file = selectedFile; 
+     const CheckUploadRequest = {
+         fileId: result.fileId, // 文件ID
+         chunkIndex: 0, // 切片索引
+         chunkHash:'', // 切片哈希
+         chunk: new Blob(), // 切片
+         totalChunks: totalChunk, // 总分片数
+         clientIp: '127.0.0.1' // 客户端IP地址
+     }
+     console.log("准备执行上传切片，检查是否有上传过该文件：",result.exist);
+     if(!result.exist){
+         console.log("文件未上传过，开始切片上传");
+         uploadTotalChunks.value = totalChunk;
+         for(let i = 0;i<totalChunk;i++){
+             CheckUploadRequest.chunkIndex=i;
+             // 1. 设置当前切片索引
+        // 2. 读取对应索引的文件切片数据（核心：截取文件的指定范围）
+        const chunk = getFileChunk(file, i, chunkSize);
+        CheckUploadRequest.chunk = chunk;
+        // 3. 计算当前切片的哈希（异步操作，需await）
+        CheckUploadRequest.chunkHash = await calculateChunkHash(chunk);
+        // 4. 执行切片上传（需替换为你的上传接口调用）
+        const chunkUploadResult:ChunkUploadResult = await uploadChunk(CheckUploadRequest);
+            if(chunkUploadResult!=null){
+                // 新增：更新上传进度
+                console.log("切片上传成功",chunkUploadResult);
+                uploadCurrentChunk.value = i + 1;
+                uploadProgress.value = Math.floor((uploadCurrentChunk.value / uploadTotalChunks.value) * 100);
+                console.log(`上传进度：${uploadProgress.value}% (${uploadCurrentChunk.value}/${uploadTotalChunks.value})`);
+            }else{
+                console.log("切片数:",i," 上传失败");
+            }
+           
+         }
+         console.log("切片上传完成，开始请求合并切片");
+         const mergeRusult =  await mergeChunk(result.fileId);
+         console.log("合并结果:",mergeRusult);
+         return mergeRusult
+     }else{
+        console.log("文件已上传部分切片，仅上传未完成的");
+      // 第一步：先筛选出未上传的切片索引
+      for (let i = 0; i < totalChunk; i++) {
+        if (!uploadedChunks.includes(i)) {
+          console.log("未上传的切片索引：", i);
+          notUploadedChunks.push(i);
+        }
+      }
+
+      // 初始化未上传分片的进度基数
+      const uploadedCount = totalChunk - notUploadedChunks.length;
+      uploadCurrentChunk.value = uploadedCount;
+      uploadProgress.value = Math.floor((uploadedCount / totalChunk) * 100);
+
+      // 第二步：遍历未上传切片，读取数据并上传
+      for (const i of notUploadedChunks) {
+        CheckUploadRequest.chunkIndex = i;
+        // 读取当前索引的切片数据
+        const chunk = getFileChunk(file, i, chunkSize);
+        CheckUploadRequest.chunk = chunk;
+        // 计算切片哈希
+        CheckUploadRequest.chunkHash = await calculateChunkHash(chunk);
+        // 上传当前切片
+        await uploadChunk(CheckUploadRequest);
+            // 新增：更新上传进度
+        uploadCurrentChunk.value += 1;
+        uploadProgress.value = Math.floor((uploadCurrentChunk.value / uploadTotalChunks.value) * 100);
+        console.log(`上传进度：${uploadProgress.value}% (${uploadCurrentChunk.value}/${uploadTotalChunks.value})`);
+       
+      }
+         console.log("切片上传完成，开始请求合并切片");
+         const mergeRusult =  await mergeChunk(result.fileId);
+         console.log("合并结果:",mergeRusult);
+         uploadProgress.value = 100;
+         return mergeRusult
+     }
+}
 
 //检查文件是否存在，或文件是否是传了一半
-export const checkFile = async (formData: fileCheckRequest) => {
+export const  checkFile = async (formData: FileCheckRequest): Promise<FileCheckResult> => {
     try{
-        await request.post(API.CHECKFILE_URL, formData); // 这里假设你有一个上传文件的API，需要传入文件流和文件信息，如文件名、文件类型等
+        const result:FileCheckResult =   await request.post(API.CHECKFILE_URL, formData); 
+        return result;
     }catch(error){
         console.log(error);
+        throw error;
     }
 }
 
+//上传切片
+export const uploadChunk = async (checkUploadRequest:CheckUploadRequest): Promise<ChunkUploadResult> => {
+    const formData = new FormData();
+     // 1. 添加文件切片（key必须和后端@RequestPart("chunk")一致）
+     formData.append('chunk', checkUploadRequest.chunk); 
+     // 2. 添加其他参数
+     formData.append('request', new Blob([JSON.stringify(checkUploadRequest)], { type: 'application/json' }));
+     const result:ChunkUploadResult= await request.post(API.UPLOADCHUNK_URL,formData);
+    return result;
+}
+
+//合并切片
+const mergeChunk = async (fileId:number)=>{
+    const result = await request.post(
+        API.MERGECHUNK_URL,
+        fileId,
+        {
+            headers: {
+                'Content-Type': 'application/json' // 关键：指定JSON格式
+            }
+        }
+    );
+    return result;
+}
+
+
+//删除文件
+export  const deleteFile = async (fileId:number)=>{
+    return await request.delete(API.DELETEFILE_URL,{params:{fileId}})
+}
+
+
+
+function getFileChunk(file: File, chunkIndex: number, chunkSize: number): Blob {
+ // 计算当前切片的起始和结束字节位置
+ const start = chunkIndex * chunkSize;
+ // 最后一片可能不足chunkSize，取文件末尾
+ const end = Math.min(start + chunkSize, file.size);
+ // 截取文件的指定范围，返回Blob（可直接用于上传）
+ return file.slice(start, end);
+}

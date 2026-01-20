@@ -1,4 +1,4 @@
-export interface fileCheckRequest {
+export interface FileCheckRequest {
     /**
      * 文件名（必填）
      */
@@ -27,6 +27,6 @@ export interface fileCheckRequest {
     /**
      * 客户端IP（可选，注意：Java端字段名是ClientIp，TS保持一致）
      */
-    ClientIp?: string;
+    clientIp?: string;
   }
   
