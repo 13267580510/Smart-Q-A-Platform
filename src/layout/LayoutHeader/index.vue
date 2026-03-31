@@ -9,6 +9,9 @@
                 <el-menu-item index="/answer">等你来答</el-menu-item>
                 <el-menu-item index="ask">提问</el-menu-item>
                 <el-menu-item index="/ai-chat">AI对话</el-menu-item>
+                <el-menu-item index="/articles">文章专栏</el-menu-item>
+                <el-menu-item index="/files">资源站</el-menu-item>
+                
             </el-menu>
             <div class="search">
                 <div style="display: flex; align-items: center;">
@@ -48,10 +51,9 @@
                 <div class="userBox">
                         <div class="avatar-container" @click="handleAvatarClick">
                         <img 
-                            :src="avatarUrl"
-                            alt="用户头像"
-                            class="user-avatar"
-                            ref="avatarImg"
+                        :src="defaultAvatar"
+                        class="user-avatar"
+                        ref="avatarImg"
                         >
                         </div>
                         <el-dropdown>
@@ -198,8 +200,67 @@ const handleAvatarClick = () => {
     });
   }
 };
-// 添加图片加载和错误处理
-const avatarImg = ref<HTMLImageElement | null>(null);
+// 头像计算属性
+const userAvatar = computed(() => {
+    if (!UserStore.isLoggedIn) {
+        return notLoginAvatar;
+    }
+    
+    if (!UserStore.userInfo?.avatarPath) {
+        return defaultAvatar;
+    }
+    
+    // 调用函数处理路径
+    const completePath = getCompleteImageUrl(UserStore.userInfo.avatarPath);
+    console.log('计算头像路径:', {
+        originalPath: UserStore.userInfo.avatarPath,
+        completePath: completePath,
+        isLoggedIn: UserStore.isLoggedIn
+    });
+    return completePath;
+});
+
+// 图片加载错误处理
+const handleAvatarError = (event: Event) => {
+    console.error('头像加载失败:', event);
+    const img = event.target as HTMLImageElement;
+    
+    // 如果当前不是默认头像，尝试使用默认头像
+    if (img.src !== defaultAvatar) {
+        img.src = defaultAvatar;
+        // 防止默认头像也出错时的递归
+        img.onerror = null;
+    }
+};
+
+// 获取完整图片URL的函数
+const IMAGE_PREFIX = 'http://127.0.0.1:8080';
+const getCompleteImageUrl = (imagePath) => {
+    console.log("获取图片URL - 输入路径:", imagePath);
+    
+    // 如果是undefined或null，返回空字符串
+    if (!imagePath || imagePath === 'undefined' || imagePath === 'null') {
+        console.log("图片路径为空，返回空字符串");
+        return '';
+    }
+    
+    // 如果已经是完整URL，直接返回
+    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+        console.log("已经是完整URL:", imagePath);
+        return imagePath;
+    }
+    
+    // 处理可能的路径格式
+    let processedPath = imagePath;
+    // 如果路径不以斜杠开头，添加斜杠
+    if (!processedPath.startsWith('/')) {
+        processedPath = '/' + processedPath;
+    }
+    
+    const completeUrl = IMAGE_PREFIX + processedPath;
+    console.log("生成的完整URL:", completeUrl);
+    return completeUrl;
+};
 
 onMounted(() => {
     console.log('组件挂载完成');
@@ -207,34 +268,6 @@ onMounted(() => {
   //    getSearchQuestionList();
     getNotice();
     
-  // 检查样式
-  setTimeout(() => {
-    if (avatarImg.value) {
-      const style = window.getComputedStyle(avatarImg.value);
-      console.log('头像元素样式:', {
-        display: style.display,
-        visibility: style.visibility,
-        width: style.width,
-        height: style.height,
-        opacity: style.opacity,
-        position: style.position,
-        zIndex: style.zIndex
-      });
-    }
-  }, 100);
-
-  if(!UserStore.isLoggedIn){
-    console.log("用户未登录");
-      avatarImg.value.src = notLoginAvatar;
-    console.log('头像元素:', avatarImg.value.src);
-  }else{
-     if (!UserStore.userInfo?.avatarPath) {
-        // 如果没有头像，返回默认头像
-        avatarImg.value.src = defaultAvatar;
-    }else{
-         avatarImg.value.src = UserStore.userInfo.avatarPath
-    }
-  }
 })
 </script>
 
@@ -373,15 +406,22 @@ onMounted(() => {
     height: 300px;
     overflow: auto;
 }
+/* 原有样式基础上，确保头像样式正确 */
 .user-avatar {
   width: 40px !important;
   height: 40px !important;
   border-radius: 50%;
   cursor: pointer;
-  display: block; /* 重要：确保是块级显示 */
-  visibility: visible !important; /* 确保可见 */
-  opacity: 1 !important; /* 确保不透明 */
-  border: 1px solid #ccc; /* 添加边框以便调试 */
-  background-color: #f0f0f0; /* 添加背景色以便调试 */
+  display: block !important;
+  object-fit: cover !important; /* 确保图片按比例缩放填充 */
+  border: 2px solid #e0e0e0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+/* 调试用样式，确保元素可见 */
+.avatar-container {
+  display: block;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 </style>

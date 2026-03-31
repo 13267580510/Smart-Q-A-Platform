@@ -17,11 +17,6 @@
                         <p style="width: 100%;overflow: hidden;white-space: nowrap;text-overflow: ellipsis;">{{ row.questionTitle }}</p>
                     </template>
                 </el-table-column>
-                <el-table-column label="发布者者用户名" width="150" align="center">
-                    <template #="{ row }">
-                        <pre>{{ row.questionUsername }}</pre>
-                    </template>
-                </el-table-column>
                 <el-table-column label="举报者用户名" width="150" align="center">
                     <template #="{ row }">
                         <pre>{{ row.reporterUsername }}</pre>
@@ -60,9 +55,6 @@
             <el-form label-width="auto">
                 <el-form-item label="问题标题:">
                     <h4>{{ handleInfo.questionTitle }}</h4>
-                </el-form-item>
-                <el-form-item label="发布者用户名:">
-                    <el-input :value="handleInfo.questionUsername" disabled></el-input>
                 </el-form-item>
                 <el-form-item label="举报者用户名:">
                     <el-input :value="handleInfo.reporterUsername" disabled></el-input>
@@ -151,7 +143,8 @@ const confirm = async (type:string)=>{
     let result:any = null;
     if(type == 'ban') result = await ReqHandleQuestionReport(handleInfo.value.id,true)
     else if(type == 'reject') result = await ReqHandleQuestionReport(handleInfo.value.id,false)
-    if(result.status == 200){
+    console.log("驳回result",result);
+    if(result=="操作成功"){
         if(type=='ban') ElMessage.success('封禁问题成功');
         if(type=='reject') ElMessage.success('驳回举报成功');
         isBan.value = false;
@@ -171,9 +164,10 @@ const confirm = async (type:string)=>{
 const getQuestionReportList = async(page=1,show=false,search=false)=>{
     pageNo.value = page;
     let result = await ReqGetQuestionReport(pageNo.value,pageSize.value);
-    if(result.status==200){
-        data.value = result.data.data;
-        total.value = result.data.totalElements;
+    console.log("result",result);
+    if(result){
+        data.value = result.data;
+        total.value = result.totalElements;
         if(show) ElMessage.success('获取问题举报列表成功')
         if(search) ElMessage.success('查询问题举报列表成功')
         return 'ok'

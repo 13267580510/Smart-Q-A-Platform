@@ -147,7 +147,7 @@ export const createNewSession = async ()=> {
   console.log('开始创建会话，Token:', token);
   
   try {
-    const response = await request.post('/chat/session/new', {}, {
+    const response = await request.post('/ai/chat/session/new', {}, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -183,7 +183,7 @@ export const deleteSession = async (sessionId: string): Promise<{
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.delete(`/chat/session/${sessionId}`, {
+  const response = await request.delete(`/ai/chat/session/${sessionId}`, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -199,7 +199,7 @@ export const getSessionInfo = async (sessionId: string): Promise<SessionInfo> =>
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.get(`/chat/session/${sessionId}/info`, {
+  const response = await request.get(`/ai/chat/session/${sessionId}/info`, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -215,7 +215,7 @@ export const getUserSessions = async ()=> {
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.get('/chat/sessions', {
+  const response = await request.get('/ai/chat/sessions', {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -233,7 +233,7 @@ export const getSessionMessages = async (
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.get(`/chat/session/${sessionId}/messages`, {
+  const response = await request.get(`/ai/chat/session/${sessionId}/messages`, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -254,7 +254,7 @@ export const updateSessionTitle = async (sessionId: string, title: string): Prom
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.put(`/chat/session/${sessionId}/title`, 
+  const response = await request.put(`/ai/chat/session/${sessionId}/title`, 
     { title },
     {
       headers: {
@@ -277,7 +277,7 @@ export const cleanupExpiredSessions = async (): Promise<{
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.post('/chat/sessions/cleanup', {}, {
+  const response = await request.post('/ai/chat/sessions/cleanup', {}, {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -298,7 +298,7 @@ export const getSessionStats = async (): Promise<{
   const UserStore = useUserStore();
   const token = UserStore.token;
   
-  const response = await request.get('/chat/sessions/stats', {
+  const response = await request.get('/ai/chat/sessions/stats', {
     headers: {
       'Authorization': `Bearer ${token}`
     }
@@ -356,10 +356,10 @@ export const sseChat = async (
   const { signal } = abortController;
 
   try {
-    console.log("开始SSE请求，URL:", `/api/chat/sse`);
+    console.log("开始SSE请求，URL:", `/ai/chat/sse`);
     
     // 发起Fetch请求，接收流式响应
-    const response = await fetch(`/api/chat/sse`, {
+    const response = await fetch(`/ai/chat/sse`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -881,10 +881,10 @@ export const sseChatWithAttachment = async (
       formData.append('file', file);
     }
     
-    console.log("开始SSE请求（带附件），URL:", '/api/chat/sse');
+    console.log("开始SSE请求（带附件），URL:", '/ai/chat/sse');
     
     // 发起Fetch请求，接收流式响应
-    const response = await fetch('/api/chat/sse', {
+    const response = await fetch('/ai/chat/sse', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,

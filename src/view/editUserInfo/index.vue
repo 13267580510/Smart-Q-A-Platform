@@ -8,8 +8,10 @@
                 </el-icon>
             </div>
             <div class="userImgBox">
-                <img :src="userInfo.avatarPath ? 'http://127.0.0.1:8080' + userInfo.avatarPath : 'https://img03.sogoucdn.com/app/a/100520093/8379901cc65ba509-45c21ceb904429fc-7587b62e452ef23f277ac5600d144bec.jpg'"
-                    alt="">
+                <img 
+                :src="UserStore.userInfo?.avatarPath ? 'http://127.0.0.1:8080' + UserStore.userInfo.avatarPath : defaultAvatar" 
+                alt="用户头像"
+                >
                 <el-upload class="mask" :show-file-list="false"
                      :before-upload="beforeAvatarUpload">
                     <div class="content">
@@ -179,6 +181,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router';
 import useUserStore from '../../store/modules/user';
 import { ReqUpdatePassword, ReqUpdateUserInfo, ReqUploadUserImg } from '../../api/user';
+import defaultAvatar from '../../assets/icons/default_avat.svg'
 const UserStore = useUserStore();
 const userInfo = ref(UserStore.userInfo);
 const $router = useRouter();
@@ -193,10 +196,11 @@ const beforeAvatarUpload: UploadProps['beforeUpload'] = async (rawFile) => {
             const formData = new FormData();
             formData.append('avatarFile',rawFile)
             let result = await ReqUploadUserImg(UserStore.userInfo.id,formData);
-            if(result.status == 200){
-                UserStore.userInfo.avatarPath = result.data
+            console.log("修改头像：",result);
+            if(result){
+                UserStore.userInfo.avatarPath = result
                 localStorage.setItem('userInfo',JSON.stringify(UserStore.userInfo))
-                userInfo.value.avatarPath = result.data;
+                userInfo.value.avatarPath = result;
                 ElMessage.success('修改用户头像成功')
             }else{
                 ElMessage.error('修改用户头像失败')
@@ -226,10 +230,12 @@ const editUserInfo = ref({
 })
 const updateUserInfo = async () => {
     let result = await ReqUpdateUserInfo(id, editUserInfo.value);
-    if (result.status == 200) {
-        UserStore.userInfo = result.data;
+    console.log("修改用户信息：",result);
+
+    if (result) {
+        UserStore.userInfo = result;
         localStorage.setItem('userInfo', JSON.stringify(result.data));
-        userInfo.value = result.data
+        userInfo.value = result
         return 'ok'
     } else {
         return Promise.reject('修改用户信息失败')
@@ -237,10 +243,11 @@ const updateUserInfo = async () => {
 }
 const updateUserPassword = async ()=>{
     let result = await ReqUpdatePassword(UserStore.userInfo.id,editUserInfo.value.password)
-    if(result.status ==200){
+    console.log("修改用户密码：",result);
+    if(result){
         ElMessage.success('修改密码成功');
     }else{
-        ElMessage.success('修改密码失败');
+        ElMessage.error('修改密码失败');
     }
 }
 const editUserName = ref(false)

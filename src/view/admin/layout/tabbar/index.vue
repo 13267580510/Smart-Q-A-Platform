@@ -9,10 +9,11 @@
         <div class="right">
             <el-button icon="FullScreen" circle @click="fullScreen"></el-button>
             <el-button icon="Refresh" circle  @click="updateRefresh"></el-button>
-            <img :src="UserStore.userInfo.avatarPath?'http://127.0.0.1:8080' + UserStore.userInfo.avatarPath:'https://wpimg.wallstcn.com/f778738c-e4f8-4870-b634-56703b4acafe.gif'" alt="">
+            <!-- <img :src="UserStore.userInfo.avatarPath?'http://127.0.0.1:8080' + UserStore.userInfo.avatarPath:'https://wpimg.wallstcn.com/f778738c-e4f8-4870-b634-56703b4acafe.gif'" alt=""> -->
             <el-dropdown>
                 <span class="el-dropdown-link">
-                    {{ UserStore.userInfo.nickname }}
+                    <!-- {{ UserStore.userInfo.nickname }} -->
+                      admin1
                     <el-icon class="el-icon--right">
                         <arrow-down />
                     </el-icon>

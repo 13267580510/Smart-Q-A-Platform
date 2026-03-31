@@ -34,7 +34,8 @@
         <el-table-column prop="createTime" label="上传时间" width="180"/>
         <el-table-column label="操作" width="200">
           <template #="{ row }">
-            <el-button type="primary" link @click="handleDownload(row)">下载</el-button>
+            <!-- ========== 修改：绑定编辑按钮点击事件 ========== -->
+            <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
             <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -120,14 +121,53 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- ========== 新增：修改分类对话框 ========== -->
+    <el-dialog v-model="editVisible" title="修改文件分类" width="400px">
+      <div style="padding: 10px 0;">
+        <el-form label-width="80px" :model="editForm">
+          <el-form-item label="文件名：">
+            <el-input v-model="editForm.fileName" disabled />
+          </el-form-item>
+          <el-form-item label="当前分类：">
+            <el-input v-model="editForm.oldCategory" disabled />
+          </el-form-item>
+          <el-form-item label="新分类：" required>
+            <el-select 
+              v-model="editForm.newCategory" 
+              placeholder="请选择新分类" 
+              style="width: 100%;"
+              @change="validateEditForm"
+            >
+              <el-option 
+                v-for="category in categories" 
+                :key="category" 
+                :label="category" 
+                :value="category" 
+              />
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button 
+          type="primary" 
+          @click="handleConfirmEdit"
+          :disabled="!editForm.newCategory || editForm.newCategory === editForm.oldCategory"
+        >
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, UploadFilled } from '@element-plus/icons-vue'
-import type { UploadInstance, UploadFile } from 'element-plus'  // 新增：导入上传组件类型
+import { Upload, UploadFilled, Search } from '@element-plus/icons-vue' // 新增：导入Search图标
+import type { UploadInstance, UploadFile } from 'element-plus'
 import useUserStore from '@/store/modules/user'
 import { formatTimestamp } from '@/utils/general'
 import { 
@@ -140,12 +180,16 @@ import {
   resetUploadProgress,
   ReqSearchFiles,
   ReqGetFileList,
-  deleteFile
+  deleteFile,
+  // ========== 新增：导入修改分类接口 ==========
+  ReqUpdateFileCategory,
+  UpdateFileCategoryParams
 } from '@/api/files'
 import {FileCheckRequest} from  '@/model/file/fileCheckRequest'
 import { FileInfo } from '@/model/file/fileInfo'
 import {CheckUploadRequest}  from '@/model/file/chunkUploadRequest'
 import {calculateFileMD5,calculateLargeFileMD5} from  '@/utils/computeMD5'
+
 // 定义接口
 interface FileItem {
   id: number
@@ -153,7 +197,16 @@ interface FileItem {
   fileSize: number
   fileType: string
   filePath: string
-  createdTime: string
+  createTime: string
+  category: string // 补充：文件分类字段
+}
+
+// ========== 新增：编辑表单类型 ==========
+interface EditForm {
+  fileId: number
+  fileName: string
+  oldCategory: string
+  newCategory: string
 }
 
 // 状态管理
@@ -165,19 +218,28 @@ const total = ref(0)
 const searchKeyword = ref('')
 
 const uploadVisible = ref(false)
+// ========== 新增：编辑弹窗状态 ==========
+const editVisible = ref(false)
+const editForm = ref<EditForm>({
+  fileId: 0,
+  fileName: '',
+  oldCategory: '',
+  newCategory: ''
+})
+
 const userStore = useUserStore()
-const uploadRef = ref<UploadInstance>()  // 修改：指定上传组件类型
-const categories = ref<string[]>([])  // 修改：改为数组类型
+const uploadRef = ref<UploadInstance>()
+const categories = ref<string[]>([])
 const selectedCategory = ref('')
-const selectedFile = ref<File | null>(null)  // 新增：存储选中的文件
+const selectedFile = ref<File | null>(null)
 const uploadFiles  = ref<UploadFile[]>()
-const isUploading = ref<boolean>(false)//上传状态控制
+const isUploading = ref<boolean>(false)
 
 // 获取分类列表
 const getCategories = async () => {
   try {
     const data = await ReqGetCategories()
-    categories.value = data || [];  // 确保是数组
+    categories.value = data || [];
   } catch (error) {
     ElMessage.error('获取分类列表失败'); 
   }
@@ -198,7 +260,6 @@ const handleSearch = async () => {
     
     try {
         const response = await ReqSearchFiles(searchKeyword.value.trim())
-        // 注意：根据你的API返回结构调整
         if (Array.isArray(response)) {
             fileList.value = response
             total.value = response.length
@@ -223,7 +284,7 @@ const getFileList = async (page: number, showMessage = false) => {
   loading.value = true
   try {
         const params: any = {
-            page: page - 1,
+            page: page,
             size: pageSize.value
         }
         console.log("selectedCategory.value:", selectedCategory.value)
@@ -273,14 +334,12 @@ const pagenav = () => {
 // 打开上传对话框
 const handleUpload = () => {
   uploadVisible.value = true
-  // 重置状态
   selectedFile.value = null
   selectedCategory.value = ''
 }
 
-// 新增：文件选择变化事件
+// 文件选择变化事件
 const handleFileChange = (uploadFile: UploadFile, uploadFilesParam: UploadFile[]) => {
-  // 存储选中的文件
   if (uploadFilesParam.length > 0) {
     selectedFile.value = uploadFile.raw as File
     uploadFiles.value = uploadFilesParam;
@@ -293,16 +352,13 @@ const handleFileChange = (uploadFile: UploadFile, uploadFilesParam: UploadFile[]
 
 // 上传前检查
 const beforeUpload = (file: File) => {
-  // 检查是否选择分类
   if (!selectedCategory.value) {
     ElMessage.error('请先选择文件分类！')
     return false
   }
   
-  // 大文件判断（修改：10MB作为分片上传阈值，与提示文本一致）
   const isLt10M = file.size / 1024 / 1024 < 10
   if (!isLt10M) {
-    // 直接触发分片上传，阻止普通上传
     uploadLargeFile(file)
     return false
   }
@@ -313,17 +369,15 @@ const beforeUpload = (file: File) => {
 const handleConfirmUpload = async () => {
   console.log("uploadRef",selectedFile.value);
   if (selectedFile.value && uploadFiles.value?.length > 0) {
-      // 标记上传中
       isUploading.value = true
-    // 重置进度
     resetUploadProgress()
     try{
       const fileInfo:FileInfo = {
-          fileName: selectedFile.value?.name || '',  // 确保文件名存在
-          fileSize: selectedFile.value?.size || 0,  // 确保文件大小存在
-          md5:'' ,  // 假设需要计算MD5，这里可以留空
-          category: selectedCategory.value,  // 确保分类存在
-          userId: userStore.userInfo.id,  // 确保用户ID存在
+          fileName: selectedFile.value?.name || '',
+          fileSize: selectedFile.value?.size || 0,
+          md5:'' ,
+          category: selectedCategory.value,
+          userId: userStore.userInfo.id,
           clientIp:'127.0.01'
         }
       if(selectedFile.value.size < 100 * 1024 * 1024){
@@ -340,12 +394,16 @@ const handleConfirmUpload = async () => {
       }else{
         const result = await ReqUploadChunk(checkFileresult,selectedFile.value);
         console.log("result",result);
+        if(result){ // 修复：变量名拼写错误 ruslt -> result
+          ElMessage.success('上传成功')
+        }else{
+          ElMessage.error('上传失败')
+        }
       }
   }catch(error){
     console.error('上传失败:', error)
     ElMessage.error(`上传失败：${(error as Error).message || '未知错误'}`)
   }finally{
-     // 无论成功失败，都标记上传结束
      isUploading.value = false
   }
   } else {
@@ -356,10 +414,8 @@ const handleConfirmUpload = async () => {
 // 取消上传
 const handleCancelUpload = () => {
   uploadVisible.value = false
-  // 重置状态
   selectedFile.value = null
   selectedCategory.value = ''
-  // 清空上传组件的文件列表
   if (uploadRef.value) {
     uploadRef.value.clearFiles()
   }
@@ -381,10 +437,10 @@ const handleUploadError = () => {
   ElMessage.error('上传失败，请重试')
 }
 
+// 删除文件
 const handleDelete = async (file: FileItem) => {
   console.log("file",file);
   try {
-    // 1. 弹出确认框，等待用户确认
     await ElMessageBox.confirm(
       `确定要删除文件"${file.fileName}"吗？此操作不可恢复。`,
       '警告',
@@ -395,25 +451,66 @@ const handleDelete = async (file: FileItem) => {
       }
     )
 
-    // 2. 用户确认后，调用删除接口（核心新增逻辑）
-    await deleteFile(file.id); // 假设FileItem中有fileId字段，需和实际字段名匹配
+    await deleteFile(file.id);
 
-    // 3. 接口调用成功，提示并刷新文件列表
     ElMessage.success(`文件"${file.fileName}"删除成功`);
-    getFileList(1); // 刷新列表，展示最新数据
+    getFileList(1);
   } catch (error: any) {
-    // 分两种异常处理：用户取消操作 / 接口调用失败
     if (error.name === 'CanceledError') {
-      // 用户点击取消按钮，友好提示
       ElMessage.info('已取消删除');
     } else {
-      // 接口调用失败（网络错误/服务端报错等），提示错误
       ElMessage.error(`删除失败：${error.message || '服务器异常，请稍后重试'}`);
-      console.error('文件删除接口调用失败：', error); // 控制台打印详细错误，便于排查
+      console.error('文件删除接口调用失败：', error);
     }
   }
 }
 
+// ========== 新增：编辑相关方法 ==========
+// 打开编辑弹窗
+const handleEdit = (row: FileItem) => {
+  // 初始化编辑表单
+  editForm.value = {
+    fileId: row.id,
+    fileName: row.fileName,
+    oldCategory: row.category,
+    newCategory: row.category // 默认选中当前分类
+  }
+  editVisible.value = true
+}
+
+// 验证编辑表单（判断新分类是否和原分类一致）
+const validateEditForm = () => {
+  if (editForm.value.newCategory === editForm.value.oldCategory) {
+    ElMessage.warning('新分类不能和原分类相同')
+  }
+}
+
+// 确认修改分类
+const handleConfirmEdit = async () => {
+  try {
+    // 构建请求参数
+    const params: UpdateFileCategoryParams = {
+      fileId: editForm.value.fileId,
+      newCategory: editForm.value.newCategory
+    }
+
+    // 调用修改分类接口
+    await ReqUpdateFileCategory(params)
+
+    // 关闭弹窗 + 刷新列表
+    editVisible.value = false
+    getFileList(currentPage.value)
+  } catch (error) {
+    console.error('修改分类失败:', error)
+    // 不关闭弹窗，让用户重新操作
+    ElMessage.error('修改分类失败，请重试')
+  }
+}
+
+// 大文件上传（原有方法补充，避免报错）
+const uploadLargeFile = (file: File) => {
+  ElMessage.info('大文件将进行分片上传，请点击确认上传按钮')
+}
 
 onMounted(() => {
   getFileList(1)
@@ -440,5 +537,14 @@ onMounted(() => {
   margin-top: 10px;
   color: #666;
   font-size: 12px;
+}
+
+/* 新增：编辑弹窗样式优化 */
+:deep(.el-dialog__body) {
+  padding: 20px;
+}
+
+:deep(.el-form-item) {
+  margin-bottom: 15px;
 }
 </style>

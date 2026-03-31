@@ -11,30 +11,7 @@
                 草稿箱(0)
             </div>
         </div>
-        <div class="nav">
-            <ul>
-                <li>
-                    <el-button :icon="Document" circle></el-button>
-                    <p>我的问题</p>
-                </li>
-                <li>
-                    <el-button :icon="Document" circle></el-button>
-                    <p>我的收藏</p>
-                </li>
-                <li>
-                    <el-button :icon="Document" circle></el-button>
-                    <p>我的问题</p>
-                </li>
-                <li>
-                    <el-button :icon="Document" circle></el-button>
-                    <p>我的举报</p>
-                </li>
-                <li @click="gotoResource">
-                    <el-button :icon="Document" circle></el-button>
-                    <p >资源站</p>
-                </li>
-            </ul>
-        </div>
+    
         <div class="create-box">
             <p class="title">开启你的问答网站创作之旅</p>
             <div class="context">
@@ -42,38 +19,27 @@
                 <img src="../../assets/image/i-create.png" alt="">
             </div>
         </div>
-        <el-button :icon="Plus" class="startCreateBtn">开始创作</el-button>
+        <el-button :icon="Plus" class="startCreateBtn" @click="gotoCreateArticle()">开始创作</el-button>
     </el-card>
-    <el-card class="circle">
-        <div class="header">
-            <div class="title">
-                <el-icon>
-                    <HelpFilled />
-                </el-icon>
-                <p>关注用户</p>
-            </div>
-            <div class="goBox">
-                全部用户
-            </div>
-        </div>
-        <div class="main">
-            <template v-for="item in 3">
-                <div class="item">
-                <div class="infoBox">
-                    <img src="../../assets/icons/pUser.svg" alt="">
-                    <div class="info">
-                        <p>username</p>
-                        <p>回答问题数:1999</p>
-                    </div>
-                </div>
-                <el-button type="primary">关注</el-button>
-            </div>
-            </template>
-             <div style="display: flex; align-items: center;justify-content: center;">
-                <el-pagination layout="prev, pager, next" :total="9" v-model:page-size="pageCount" v-model:current-page="pageNo" @change="changeUserList"/>
-            </div>
-        </div>
-    </el-card>
+        <!-- 大家都在搜 -->
+        <el-card class="trending-card" shadow="hover">
+          <div class="card-header">
+            <span>大家都在搜</span>
+            <el-link type="primary" @click="refreshTrending">换一换</el-link>
+          </div>
+          <ul class="trending-list">
+            <li
+              v-for="(item, idx) in trendingList"
+              :key="idx"
+              class="trending-item"
+              @click="search(item.keyword)"
+            >
+              <span class="rank">{{ idx + 1 }}</span>
+              <span class="keyword">{{ item.keyword }}</span>
+              <span class="hot">{{ item.hot }}</span>
+            </li>
+          </ul>
+        </el-card>
 </template>
 
 <script setup lang="ts">
@@ -82,7 +48,12 @@ import { ref } from 'vue';
 import {useRouter} from "vue-router";   
 const pageCount = ref(3);
 const router = useRouter();
-
+// 大家都在搜
+const trendingList = ref([
+  { keyword: "现货黄金大幅跳水后再反弹", hot: "412万" },
+  { keyword: "警方通报「金晨被曝肇事」", hot: "366万" },
+  { keyword: "宝可梦在靖国神社举办活动", hot: "363万" },
+]);
 const pageNo = ref(0);
 const changeUserList = ()=>{
     console.log(pageCount.value,pageNo.value)
@@ -90,6 +61,9 @@ const changeUserList = ()=>{
 
 const gotoResource = ()=>{
     router.push('/files')
+}
+const gotoCreateArticle=()=>{
+    router.push('/articleCreate')
 }
 </script>
 
@@ -227,5 +201,47 @@ const gotoResource = ()=>{
        }
     }
     
+}
+.trending-card {
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  .trending-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+
+    .trending-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 0;
+      cursor: pointer;
+      font-size: 14px;
+
+      &:hover {
+        color: #1772f6;
+      }
+
+      .rank {
+        width: 20px;
+        color: #858585;
+        font-size: 13px;
+      }
+
+      .keyword {
+        flex: 1;
+      }
+
+      .hot {
+        color: #858585;
+        font-size: 12px;
+      }
+    }
+  }
 }
 </style>

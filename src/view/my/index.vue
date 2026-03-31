@@ -2,7 +2,10 @@
     <div>
         <el-card class="header">
            <div class="userBox">
-                <img :src="UserStore.userInfo.avatarPath?'http://127.0.0.1:8080' + UserStore.userInfo.avatarPath:'https://img03.sogoucdn.com/app/a/100520093/8379901cc65ba509-45c21ceb904429fc-7587b62e452ef23f277ac5600d144bec.jpg'" alt="">
+            <img 
+                :src="UserStore.userInfo?.avatarPath ? 'http://127.0.0.1:8080' + UserStore.userInfo.avatarPath : defaultAvatar" 
+                alt="用户头像"
+            >                
                 <div class="userInfo">
                     <div class="user">
                         <div class="username">{{UserStore.userInfo.nickname}}</div>
@@ -21,10 +24,8 @@
         <el-card>
             <el-menu mode="horizontal" :default-active="activeIndex" @select="handleSelect" router>
                 <el-menu-item index="/my/myquestion">我的问题</el-menu-item>
-                <el-menu-item index="/my/myClickUp">我的点赞</el-menu-item>
+                <el-menu-item index="/my/myArticle">我的文章</el-menu-item>
                 <el-menu-item index="/my/myCollect">我的收藏</el-menu-item>
-                <el-menu-item index="/my/myReport">我的举报</el-menu-item>
-                <el-menu-item index="/my/myComment">我的评论</el-menu-item>
             </el-menu>
             <div class="show" style="margin-top: 10px;">
                 <router-view></router-view>
@@ -38,6 +39,7 @@ import { useRouter } from 'vue-router';
 import {ref} from 'vue'
 import useUserStore from '../../store/modules/user';
 import {ArrowDown,ArrowUp} from '@element-plus/icons-vue'
+import defaultAvatar from '../../assets/icons/default_avat.svg'
 const $router = useRouter();
 const activeIndex = ref('/my/myquestion')
 const UserStore = useUserStore()

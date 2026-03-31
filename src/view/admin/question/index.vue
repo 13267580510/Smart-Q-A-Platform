@@ -154,7 +154,7 @@ const getQuestionAll = async (page = 1,show = false,search = false)=>{
     pageNo.value = page;
     let result = await ReqGetAdminQuestionAll(pageNo.value,pageSize.value);
     console.log(result)
-    if(result.status === 200){
+    if(result){
         questionAllList.value = result.data;
         total.value = result.total
         if(show){
@@ -170,7 +170,7 @@ const getQuestionAll = async (page = 1,show = false,search = false)=>{
 }
 const delQuestion = async (id) =>{
     let result = await ReqDelAdminQuestion(id);
-    if(result.status == 200){
+    if(result){
         ElMessage.success('删除问题信息成功');
         if(Status.value == '' || Status.value == '全部'){
             getQuestionAll(pageNo.value);
@@ -189,7 +189,8 @@ const delQuestion = async (id) =>{
 }
 const approvedQuestion = async (id)=>{
     let result = await ReqApprovedQuestion(id,true);
-    if(result.status == 200){
+    console.log("问题审核result:",result)
+    if(result){
         ElMessage.success('问题审核通过成功');
         if(Status.value == '' || Status.value == '全部'){
             getQuestionAll(pageNo.value);
@@ -234,7 +235,7 @@ const search = async (page = 1,show = false)=>{
        state = 'CLOSED'
         result = await ReqSearchAdminQuestion(pageNo.value,pageSize.value,state); 
     }
-    if(result.status == 200){
+    if(result){
         questionAllList.value = result.data;
         total.value = result.total
         if(show) ElMessage.success('查询问题成功');

@@ -74,6 +74,37 @@ const adminRoutes = [
         ]
     },
     {
+        path: '/adminArticleManage',
+        component: () => import('../view/admin/layout/index.vue'),
+        redirect: '/adminArticleManage/article',
+        name: 'adminArticleManage',
+        meta: {
+            hidden: true,
+            title: '文章管理',
+            icon: 'Tickets'
+        },
+        children: [
+            {
+                path: '/adminArticleManage/article',
+                component: () => import('../view/admin/article/index.vue'),
+                meta: {
+                    title: '文章信息',
+                    icon: 'Notebook'
+                },
+
+            }
+        ]
+    },
+     {
+        path: '/reviewArticle',
+        component: () => import('../view/admin/article/showDetail.vue'),
+        name: 'reviewArticle',
+        meta: {
+            hidden: true,
+            title: '审核文章',
+        }
+    },
+    {
         path: '/adminReportManage',
         component: () => import('../view/admin/layout/index.vue'),
         redirect: '/adminReportManage/userReport',
@@ -109,6 +140,15 @@ const adminRoutes = [
                 meta: {
                     title: '回答举报',
                     icon: 'Comment'
+                }
+            },
+             {
+                path: '/adminReportManage/articleReport',
+                component: () => import('../view/admin/articleReport/index.vue'),
+                name: 'articleReport',
+                meta: {
+                    title: '文章举报',
+                    icon: 'Memo'
                 }
             }
         ]

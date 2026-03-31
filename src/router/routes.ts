@@ -37,11 +37,44 @@ const routes = [
 
             },
             {
+                path: '/questionEditor',
+                component: () => import('../view/questionEditor/index.vue'),
+                nmae: 'questionEditor',
+                meta: {
+                    title: '修改问题'
+                },
+
+            },
+            {
                 path: '/questionDetail',
                 component: () => import('../view/questionDetail/index.vue'),
                 name: 'questionDetail',
                 meta: {
                     title: '问题详情'
+                },
+            },
+             {
+                path: '/articleDetail',
+                component: () => import('../view/article/showDetail.vue'),
+                name: 'articleDetail',
+                meta: {
+                    title: '文章详情'
+                },
+            },
+            {
+                path: '/articleCreate',
+                name: 'ArticleCreate',
+                component: () => import('../view/article/release.vue'),
+                 meta: {
+                    title: '发布文章'
+                },
+            },
+            {
+                path: '/articleEditor',
+                name: 'ArticleEditor',
+                component: () => import('../view/article/editor.vue'),
+                 meta: {
+                    title: '修改文章'
                 },
             },
             {
@@ -62,11 +95,11 @@ const routes = [
                         },
                     },
                     {
-                        path: '/my/myClickUp',
-                        component: () => import('../view/myClickUp/index.vue'),
-                        name: 'myClickUp',
+                        path: '/my/myArticle',
+                        component: () => import('../view/myArticle/index.vue'),
+                        name: 'myArticle',
                         meta: {
-                            title: '我的点赞'
+                            title: '我的文章'
                         },
                     },
                     {
@@ -75,22 +108,6 @@ const routes = [
                         name: 'myCollect',
                         meta: {
                             title: '我的收藏'
-                        },
-                    },
-                    {
-                        path: '/my/myReport',
-                        component: () => import('../view/myReport/index.vue'),
-                        name: 'myReport',
-                        meta: {
-                            title: '我的举报'
-                        },
-                    },
-                    {
-                        path: '/my/myComment',
-                        component: () => import('../view/myComment/index.vue'),
-                        name: 'myComment',
-                        meta: {
-                            title: '我的评论'
                         },
                     },
                 ]
@@ -118,6 +135,14 @@ const routes = [
                 meta: {
                     title: 'AI智能助手'
                 },
+            },
+            {
+                path: '/articles',
+                component: () => import('../view/article/index.vue'),
+                name: 'articles',
+                meta: {
+                    title: '文章专栏'
+            }
             },
             {
                 path: '/files',

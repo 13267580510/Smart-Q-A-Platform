@@ -33,6 +33,18 @@
                <span>问题信息</span>
           </el-menu-item>
      </el-sub-menu>
+      <el-sub-menu index="/adminArticleManage">
+          <template #title>
+               <el-icon>
+                  <Tickets />
+               </el-icon>
+               <span>文章管理</span>
+          </template>
+          <el-menu-item index="/adminArticleManage/article">
+               <el-icon><Notebook /></el-icon>
+               <span>文章信息</span>
+          </el-menu-item>
+     </el-sub-menu>
      <el-sub-menu index="1">
           <template #title>
                <el-icon>
@@ -57,6 +69,10 @@
                     <Comment />
                </el-icon>
                <span>回答举报</span>
+          </el-menu-item>
+          <el-menu-item index="/adminReportManage/articleReport">
+             <el-icon><Memo /></el-icon>
+               <span>文章举报</span>
           </el-menu-item>
      </el-sub-menu>
      <el-menu-item index="/admin/noticeManage/notice">

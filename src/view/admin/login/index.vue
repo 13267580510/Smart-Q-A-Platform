@@ -73,7 +73,9 @@ const login = async ()=>{
     await loginForms.value.validate()
         isLoading.value = true;
         try{
-            await UserStore.login(loginForm.value)
+           const result = await UserStore.login(loginForm.value)
+           console.log("登录结果返回",result);
+           if(result){
             isLoading.value = false;
             let h:number = new Date().getHours();
             let time:String;
@@ -85,6 +87,15 @@ const login = async ()=>{
                 type: 'success',
                 message: `欢迎回来，${time}好！`
             })
+           }else{
+            isLoading.value = false;
+            ElNotification({
+                type: 'error',
+                message: '用户名或密码错误'
+            })
+            loginForms.value.resetFields(); //重置表单，防止暴力破解
+           }
+            
         }catch(error){
             ElNotification({
                 type: 'error',

@@ -38,6 +38,7 @@ const useUserStore = defineStore('UserStore', {
                 let result = await ReqLogin(data);
                 console.log("登录响应:", result);
                 if (result) {
+                    console.log("result.user",result.data)
                     this.userInfo = result.data
                     this.token = result.token;
                     

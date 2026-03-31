@@ -134,6 +134,7 @@ onMounted(() => {
 const loadCategories = async () => {
     try {
         const data = await ReqGetCategories()
+        console.log("获取分类数据:", data)
         categories.value = data;
         selectedCategory.value = 'all'
         console.log("分类加载成功:", selectedCategory.value)
@@ -146,7 +147,7 @@ const loadCategories = async () => {
 const loadFiles = async (page: number, showMessage = false) => {
     try {
         const params: any = {
-            page: page - 1,
+            page: page,
             size: pageSize.value
         }
         console.log("selectedCategory.value:", selectedCategory.value)
@@ -161,7 +162,7 @@ const loadFiles = async (page: number, showMessage = false) => {
         const data = await ReqGetFileList(params)
         console.log("获取文件列表成功:", data)
         
-        if (data && data.content) {
+        if (data) {
             fileList.value = data.content
             totalElements.value = data.totalElements
         } else {

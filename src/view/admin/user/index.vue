@@ -289,9 +289,10 @@ const data = ref([
 const getUserList = async (page = 1, show = false, showSearch = false) => {
     pageNo.value = page
     let result = await ReqGetUserAll(pageNo.value, pageSize.value);
-    if (result.status === 200) {
-        data.value = result.data.data;
-        total.value = result.data.totalElements
+    console.log("用户管理:",result);
+    if (result) {
+        data.value = result.data;
+        total.value = result.totalElements
         if (show) {
             ElMessage.success('获取用户信息成功')
         } else if (showSearch) {

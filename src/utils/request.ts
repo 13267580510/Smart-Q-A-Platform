@@ -31,12 +31,13 @@ export enum HttpStatus {
 export const isSuccessResponse = <T = any>(response: ApiResponse<T>): response is ApiResponse<T> => {
   console.log("response.success === true：",response.success === true);
   console.log("response.status ：",response);
-  return response.success === true && response.status === HttpStatus.OK;
+  
+  return response.success === true && (response.status === HttpStatus.OK ||response.status === HttpStatus.CREATED);
 };
 
 // 创建Axios实例
 const request = axios.create({
-  baseURL: '/api',
+  baseURL: '/',
   timeout: 60000,
 });
 
@@ -76,6 +77,10 @@ request.interceptors.response.use(
     
     // 使用类型守卫检查响应是否成功
     if (isSuccessResponse(apiResponse)) {
+      console.log("成功响应，返回数据");
+      if(apiResponse.data==null){
+        apiResponse.data = "操作成功"
+      }
       return apiResponse.data;
     }
 

@@ -33,7 +33,51 @@ enum API{
     CHECKFILE_URL = '/files/admin/check',
     UPLOADCHUNK_URL='/files/admin/upload-chunk',
     MERGECHUNK_URL='/files/admin/merge',
+    UPDATE_FILE_CATEGORY_URL='/files/admin/update-category'
+
 }
+// ========== 新增：修改文件分类的请求参数类型（可选，建议添加） ==========
+export interface UpdateFileCategoryParams {
+    fileId: number;       // 文件ID
+    newCategory: string;  // 新分类名称
+}
+// ========== 新增：修改文件分类的请求方法 ==========
+export const ReqUpdateFileCategory = async (params: UpdateFileCategoryParams) => {
+    try {
+        // 前置参数校验
+        if (!params.fileId || params.fileId <= 0) {
+            ElMessage.error('文件ID不能为空且必须为正整数');
+            return Promise.reject(new Error('文件ID参数错误'));
+        }
+        if (!params.newCategory || params.newCategory.trim() === '') {
+            ElMessage.error('新分类名称不能为空');
+            return Promise.reject(new Error('新分类参数错误'));
+        }
+
+        // 发送PUT请求（和后端接口方法一致）
+        const result = await request.put(
+            API.UPDATE_FILE_CATEGORY_URL,
+            null, // PUT请求体为null，参数通过query传递
+            { 
+                params: {
+                    fileId: params.fileId,
+                    newCategory: params.newCategory.trim() // 去除首尾空格
+                } 
+            }
+        );
+
+        // 成功提示
+        ElMessage.success('文件分类修改成功');
+        return result;
+    } catch (error: any) {
+        // 错误处理
+        const errorMsg = error?.response?.data?.message || '修改文件分类失败';
+        ElMessage.error(errorMsg);
+        return Promise.reject(error);
+    }
+};
+
+
 // 获取文件列表（分页 + 筛选）
 export const ReqGetFileList = (params: {
     category?: string;
@@ -71,7 +115,7 @@ export const ReqDownloadFileStream = async (fileId: number, fileName: string) =>
         }, 5 * 60 * 1000);
         
         // 直接使用 fetch 获取流
-        const response = await fetch(`/api/files/download/${fileId}`, {
+        const response = await fetch(`/files/download/${fileId}`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${userStore.token}`,
@@ -284,16 +328,38 @@ export const  checkFile = async (formData: FileCheckRequest): Promise<FileCheckR
 }
 
 //上传切片
-export const uploadChunk = async (checkUploadRequest:CheckUploadRequest): Promise<ChunkUploadResult> => {
+export const uploadChunk = async (checkUploadRequest: CheckUploadRequest): Promise<ChunkUploadResult> => {
     const formData = new FormData();
-     // 1. 添加文件切片（key必须和后端@RequestPart("chunk")一致）
-     formData.append('chunk', checkUploadRequest.chunk); 
-     // 2. 添加其他参数
-     formData.append('request', new Blob([JSON.stringify(checkUploadRequest)], { type: 'application/json' }));
-     const result:ChunkUploadResult= await request.post(API.UPLOADCHUNK_URL,formData);
-    return result;
+    
+    // 1. 文件切片，字段名改为 'chunk'
+    formData.append('chunk', checkUploadRequest.chunk);
+    
+    // 2. 构建 request JSON 对象
+    const requestPayload = {
+        chunkHash: checkUploadRequest.chunkHash,
+        chunkIndex: checkUploadRequest.chunkIndex,
+        fileId: checkUploadRequest.fileId,
+        totalChunks: checkUploadRequest.totalChunks,
+        clientIp: checkUploadRequest.clientIp,
+    };
+    
+    // 3. 添加 request 部分，指定 Content-Type 为 application/json
+    formData.append('request', new Blob([JSON.stringify(requestPayload)], {
+        type: 'application/json'
+    }));
+    
+    try {
+        const result: ChunkUploadResult = await request.post(API.UPLOADCHUNK_URL, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+            }
+        });
+        return result;
+    } catch (error) {
+        console.error('上传切片失败:', error);
+        throw error;
+    }
 }
-
 //合并切片
 const mergeChunk = async (fileId:number)=>{
     const result = await request.post(

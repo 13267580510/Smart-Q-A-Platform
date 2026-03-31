@@ -2,7 +2,7 @@
     <div class="home">
         <div class="left">
             <div class="header">
-                <img src="../../assets/image/top.jpeg" alt="">
+                <CarouselBanner banner-height="200px" :autoplay-interval="5000" />
             </div>
             <el-card class="question-box">
                 <div class="infinite-container">
@@ -15,10 +15,17 @@
                                 </div>
                             </div>
                             <div class="bottom">
-                                <el-button :icon="CaretTop" class="up" :class="[{ active: isLiked(item.id) }]" @click="toggleLike(item.id)">赞同</el-button>
+                                <el-button :icon="CaretTop" class="up" :class="[{ active: item.isLike }]" @click="toggleLike(item.id)">赞同 {{ item.likeCount }}</el-button>
                                 <el-button :icon="CaretBottom" class="down" :class="[{ active: isDisliked(item.id) }]"
                                     @click="toggleDislike(item.id)"></el-button>
                                 <div class="menu">
+                                    <div class="collect" @click="collect" :class="[{ activeC: isCollect }]">
+                                        <el-icon>
+                                            <component :is="View "></component>
+                                        </el-icon>
+                                        <p>浏览量 {{item.viewCount}}</p>
+                                    </div>
+
                                     <div class="collect" @click="collect" :class="[{ activeC: isCollect }]">
                                         <el-icon>
                                             <component :is="Star"></component>
@@ -31,9 +38,9 @@
                                         </el-icon>
                                         <p>回答数 {{ item.answerCount }}</p>
                                     </div>
-                                    <div class="report" @click="report">
+                                    <div class="report" @click="report(item.id)">
                                         <el-icon>
-                                            <component :is="Pointer"></component>
+                                            <component :is="WarnTriangleFilled"></component>
                                         </el-icon>
                                         <p>举报</p>
                                     </div>
@@ -53,7 +60,7 @@
     </div>
     <el-dialog v-model="isReport" title="举报问题" width="600">
         <div class="quest" style="text-align: center;margin-bottom: 20px;">
-            <h2>有没有先婚后爱的甜宠文？</h2>
+            <h2>{{ currentReportQuestion?.title || '' }}?</h2>
         </div>
         <div class="report" style="margin-top: 10px;">
             <el-form>
@@ -79,17 +86,20 @@
 </template>
 
 <script setup>
-import { CaretTop, CaretBottom, ChatLineRound, Pointer, Star, ChatDotSquare } from '@element-plus/icons-vue'
+import { CaretTop, CaretBottom, ChatLineRound, Pointer, Star, ChatDotSquare,View,WarnTriangleFilled} from '@element-plus/icons-vue'
 import SvgIcon from '../../components/SvgIcon/index.vue'
 import SideBar from '../../layout/SideBar/index.vue'
 import { useRouter } from 'vue-router'
+import CarouselBanner from '../../components/CarouselBanner/CarouselBanner.vue'
 import { onMounted, ref, computed,reactive } from 'vue'
-import { ReqDislikeQuestion, ReqGetQuestionAll, ReqLikeQuestion } from '../../api/question'
+import { ReqDislikeQuestion, ReqGetQuestionAll, ReqLikeQuestion,ReqGetHotQuestion,ReqReportQuestion} from '../../api/question'
 import { tr } from 'element-plus/es/locales.mjs'
 import { ElMessage } from 'element-plus'
+import a from '../../assets/image/l1.jpg'
 const isReport = ref(false)
 const $router = useRouter();
 const reportType = ref('')
+const currentReportQuestionId = ref(null); // 当前举报的问题ID
 const isUp = ref(false)
 const isDown = ref(false)
 const isCollect = ref(false)
@@ -98,45 +108,78 @@ const page = ref(1)
 const loading = ref(false)
 const noMore = ref(false)
 const disabled = computed(() => loading.value || noMore.value)
+const isLike =  ref(false)
+const isDislike = ref(false)
 const likeStatus = reactive(new Map());
+const textarea = ref('');
+
+// 计算属性：获取当前举报的问题
+const currentReportQuestion = computed(() => {
+    if (!currentReportQuestionId.value) return null;
+    return questionList.value.find(q => q.id === currentReportQuestionId.value);
+});
 const toggleLike = (questionId) => {
   const current = likeStatus.get(questionId) || 0;
-  
-  if (current === 1) {
+  const item = questionList.value.find(q => q.id === questionId);
+
+  // 检查当前的点赞状态（优先使用item的实际状态）
+  const isCurrentlyLiked = current === 1 || (item && item.isLike);
+
+  if (isCurrentlyLiked) {
     // 取消点赞
+    console.log("取消点赞")
     likeStatus.set(questionId, 0);
-    likeQuestion(questionId)
-    // 调用API取消点赞
+    if (item) {
+      item.isLike = false; // 更新item的isLike状态
+      item.likeCount -= 1; // 减少点赞数
+    }
+    likeQuestion(questionId); // 调用API取消点赞
   } else {
     // 点赞
+    console.log("点赞")
     likeStatus.set(questionId, 1);
-    likeQuestion(questionId)
-    // 如果之前已踩，取消踩
-    if (current === -1) {
-      likeStatus.set(questionId, 1);
-      // 调用API取消踩
-      dislikeQuestion(questionId)
+    if (item) {
+      item.isLike = true; // 更新item的isLike状态
+      item.likeCount += 1; // 增加点赞数
     }
-    // 调用API点赞
-    likeQuestion(questionId)
+
+    // 如果之前已踩，先取消踩
+    if (current === -1) {
+      dislikeQuestion(questionId); // 取消踩的请求
+    }
+    likeQuestion(questionId); // 调用API点赞
   }
 };
+// 刷新热搜
+const refreshTrending = () => {
+  ElMessage.success("刷新成功");
+};
+
 const toggleDislike = (questionId) => {
   const current = likeStatus.get(questionId) || 0;
+  const item = questionList.value.find(q => q.id === questionId);
+
   if (current === -1) {
     // 取消踩
     likeStatus.set(questionId, 0);
+    if (item) item.isLike = false; // 更新item的isLike状态
     dislikeQuestion(questionId)
     // 调用API取消踩
   } else {
     // 踩
     likeStatus.set(questionId, -1);
+
     // 如果之前已赞，取消赞
     if (current === 1) {
       likeStatus.set(questionId, -1);
+      if (item) {
+        item.isLike = false; // 取消点赞状态
+        item.likeCount -= 1; // 减少点赞数
+      }
       likeQuestion(questionId)
       // 调用API取消赞
     }
+
     dislikeQuestion(questionId)
     // 调用API踩
   }
@@ -171,31 +214,69 @@ const goQuestionDetail = (id) => {
 }
 const likeQuestion = async (id)=>{
     let result = await ReqLikeQuestion(id);
-    if(result.status == 200){
-        ElMessage.success(result.message)
+    if(result){
+        ElMessage.success("成功")
     }else{
         ElMessage.error('点赞失败');
     }
 }
 const dislikeQuestion = async (id)=>{
     let result = await ReqDislikeQuestion(id);
-    if(result.status == 200){
+    if(result){
         ElMessage.success(result.message)
     }else{
         ElMessage.error('点踩失败');
     }
 }
-const report = () => {
+const report = (questionId) => {
+    currentReportQuestionId.value = questionId;
     isReport.value = true;
 }
 const cancelReport = () => {
     isReport.value = false;
+    currentReportQuestionId.value = null;
+    reportType.value = '';
+    textarea.value = '';
 }
-const confirmReport = () => {
-    isReport.value = false;
+const confirmReport =  async () => {
+    // 验证表单
+    if (!reportType.value) {
+        ElMessage.warning('请选择举报类型');
+        return;
+    }
+    if (!textarea.value) {
+        ElMessage.warning('请输入举报原因');
+        return;
+    }
+    if(reportType.value=="垃圾内容"){
+        reportType.value = "SPAM"
+    }else if (reportType.value=="其他"){
+        reportType.value = "OTHER"
+    }else if (reportType.value=="冒犯性内容"){
+        reportType.value = "OFFENSIVE"
+    }else if (reportType.value=="不适当内容"){
+        reportType.value = "INAPPROPRIATE"
+    }
+    // 构建举报数据
+    const reportData = {
+        reason: reportType.value,
+        description: textarea.value
+    };
+
+    console.log('举报数据:', reportData);
+
+    try {
+        // 调用举报API
+        const result = await ReqReportQuestion(currentReportQuestionId.value, reportData);
+        ElMessage.success('举报提交成功');
+        console.log("result",result);
+        cancelReport(); // 使用取消函数来清理表单和关闭弹窗
+    } catch (error) {
+        ElMessage.error('举报提交失败，请稍后重试');
+    }
 }
 const getQuestionAll = async () => {
-    let result = await ReqGetQuestionAll(1, 10);
+    let result = await ReqGetHotQuestion(1, 10);
     console.log(result)
     questionList.value = result.data;
     return 'ok'
@@ -205,9 +286,10 @@ const getQuestion = async () => {
     console.log(page.value)
     let result = await ReqGetQuestionAll(page.value, 10);
     console.log(result)
-    if (result.status === 200) {
-        if (result.data.data.length != 0) {
-            result.data.data.forEach(item => questionList.value.push(item))
+    if (result) {
+        if (result.data.length != 0) {
+            console.log("增加")
+            result.data.forEach(item => questionList.value.push(item))
         }else{
             noMore.value = true;
         }
